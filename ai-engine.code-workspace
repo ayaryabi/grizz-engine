@@ -3,6 +3,10 @@
     {
       "name": "AI Engine",
       "path": "./ai-engine"
+    },
+    {
+      "name": "Brain Docs",
+      "path": "./brain"
     }
   ],
   "settings": {
