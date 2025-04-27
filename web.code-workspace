@@ -1,0 +1,13 @@
+{
+  "folders": [
+    {
+      "name": "Web Frontend",
+      "path": "./web"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "node_modules": true
+    }
+  }
+} 

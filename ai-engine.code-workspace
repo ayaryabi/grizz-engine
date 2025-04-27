@@ -1,0 +1,16 @@
+{
+  "folders": [
+    {
+      "name": "AI Engine",
+      "path": "./ai-engine"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "__pycache__": true,
+      "*.pyc": true
+    },
+    "python.linting.enabled": true,
+    "editor.formatOnSave": true
+  }
+} 
