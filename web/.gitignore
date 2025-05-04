@@ -39,3 +39,57 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local Environment Variables
+.env*.local
+
+# Supabase secrets - ignore generated types if using them
+# supabase/functions/.env
+# supabase/types.ts
+
+# Node Modules
+node_modules
+
+# Production Build Artifacts
+.next
+out
+
+# Static Assets Cache
+.vercel
+
+# IDE specific files
+.idea
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-project
+*.sublime-workspace
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Lockfiles
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Misc
+.env
+.env.development*
+.env.test*
+.env.production*
+
+# Deno artefacts
+denon.yml
+deno.lock
