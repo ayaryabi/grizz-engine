@@ -1,15 +1,23 @@
 -- Create the profiles table
 CREATE TABLE public.profiles (
-  user_id UUID PRIMARY KEY NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   display_name TEXT,
   avatar_url TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  monthly_token_quota INTEGER, -- Max tokens allowed per month (nullable, depends on plan)
+  token_usage_this_month INTEGER DEFAULT 0 NOT NULL, -- Tokens used this billing cycle
+  timezone TEXT NOT NULL DEFAULT 'UTC', -- User's IANA timezone
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
 -- Add comments to the table and columns
 COMMENT ON TABLE public.profiles IS 'Stores public profile information for users.';
 COMMENT ON COLUMN public.profiles.user_id IS 'References the user in auth.users.';
+COMMENT ON COLUMN public.profiles.display_name IS 'Public display name chosen by the user.';
+COMMENT ON COLUMN public.profiles.avatar_url IS 'URL of the user's avatar image.';
+COMMENT ON COLUMN public.profiles.monthly_token_quota IS 'Maximum number of tokens the user can consume per month.';
+COMMENT ON COLUMN public.profiles.token_usage_this_month IS 'Number of tokens consumed in the current billing period.';
+COMMENT ON COLUMN public.profiles.timezone IS 'User's preferred IANA timezone string for display purposes.';
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
