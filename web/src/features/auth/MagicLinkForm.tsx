@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase/supabase'; // Adjust import path based on your alias setup
+import { Button } from "@/components/ui/button";
 
 export function MagicLinkForm() {
   const [email, setEmail] = useState('');
@@ -61,10 +62,10 @@ export function MagicLinkForm() {
         {message && <p className="text-sm text-green-600">{message}</p>}
         {errorMsg && <p className="text-sm text-red-600">Error: {errorMsg}</p>}
 
-        <button
+        <Button
           type="submit"
           disabled={loading}
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-[#ba5b38] hover:bg-[#a54f31] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#ba5b38] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          className="w-full"
         >
           {loading ? (
             <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -73,7 +74,7 @@ export function MagicLinkForm() {
             </svg>
           ) : null}
           {loading ? 'Sending...' : 'Send Magic Link'}
-        </button>
+        </Button>
       </form>
     </div>
   );
