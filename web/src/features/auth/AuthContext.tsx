@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter, usePathname } from 'next/navigation'; // Import usePathname
 import { supabase } from '@/lib/supabase/supabase'; // Adjust path if needed
 import type { Session, User } from '@supabase/supabase-js';
 
@@ -18,7 +18,7 @@ interface AuthContextType {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
-  loading: boolean;
+  loading: boolean; // True if initial auth check is not done OR if profile is being fetched
   signOut: () => Promise<void>;
 }
 
@@ -35,118 +35,143 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true); // Start loading initially
-  const router = useRouter(); // Initialize router
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false); // Tracks if initial session/auth check is complete
+  const router = useRouter();
+  const pathname = usePathname(); // Get current path
 
   // Function to fetch user profile
-  const fetchProfile = async (userId: string) => {
+  const fetchProfileData = async (userId: string) => {
+    // Avoid fetching if profile for this user is already loaded and matches
+    if (profile?.user_id === userId) {
+      console.log(`AuthContext: Profile for user ${userId} already loaded. Skipping fetch.`);
+      return;
+    }
+    
+    console.log(`AuthContext: Fetching profile for user: ${userId}`);
+    setIsLoadingProfile(true);
     try {
-      console.log('Fetching profile for user:', userId);
       const { data, error, status } = await supabase
         .from('profiles')
-        .select(`user_id, display_name, avatar_url`)
+        .select('user_id, display_name, avatar_url')
         .eq('user_id', userId)
         .single();
 
       if (error && status !== 406) {
-        // 406 status means no row found, which is expected for new users
-        console.error('Error fetching profile:', error);
-        throw error;
-      }
-
-      if (data) {
-        console.log('Profile data fetched:', data);
+        console.error('AuthContext: Error fetching profile:', error);
+        setProfile(null);
+      } else if (data) {
+        console.log('AuthContext: Profile data fetched:', data);
         setProfile(data as Profile);
       } else {
-        console.log('No profile found for user (might be first login).');
-        setProfile(null); // Ensure profile is null if not found
+        console.log('AuthContext: No profile found for user (might be first login).');
+        setProfile(null);
       }
-    } catch (error) {
-      console.error('Exception in fetchProfile:', error);
-      setProfile(null); // Reset profile on error
-    } 
+    } catch (e) {
+      console.error('AuthContext: Exception in fetchProfileData:', e);
+      setProfile(null);
+    } finally {
+      setIsLoadingProfile(false);
+    }
   };
 
-  // Effect to handle auth state changes
+  // Effect for initial session check and setting up auth listener
   useEffect(() => {
-    let isMounted = true; // Prevent state updates if unmounted
-    setLoading(true);
-    // Get initial session 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    let isMounted = true;
+    setIsAuthReady(false); // Mark auth as not ready until initial check is done
+
+    // 1. Check for initial session
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
       if (!isMounted) return;
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await fetchProfile(session.user.id);
+
+      const initialUser = initialSession?.user ?? null;
+      setSession(initialSession);
+      setUser(initialUser);
+
+      if (initialUser) {
+        await fetchProfileData(initialUser.id);
+      } else {
+        setProfile(null); // No user, so no profile
       }
-      setLoading(false);
+      setIsAuthReady(true); // Initial session check complete
     });
 
-    // Listen for auth state changes
+    // 2. Set up auth state change listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (_event, currentSession) => {
         if (!isMounted) return;
-        console.log('Auth state changed:', _event, session);
-        const currentUser = session?.user ?? null;
-        const previousUser = user; // Capture previous user state
         
-        setSession(session);
-        setUser(currentUser);
-        
-        // Fetch profile only if user logged in and profile isn't already loaded (or if user changed)
-        if (currentUser && currentUser.id !== profile?.user_id) { 
-          setLoading(true);
-          await fetchProfile(currentUser.id);
-          setLoading(false);
-        } else if (!currentUser) {
+        console.log('AuthContext: Auth state changed:', _event, currentSession);
+        const newSession = currentSession;
+        const newUser = newSession?.user ?? null;
+        const oldUserId = user?.id; // Get user ID from previous state (closure)
+
+        setSession(newSession);
+        setUser(newUser);
+
+        if (newUser) {
+          // Fetch profile if user ID has changed, or if it's a new user and profile wasn't for them
+          if (newUser.id !== oldUserId || profile?.user_id !== newUser.id) {
+            await fetchProfileData(newUser.id);
+          }
+        } else {
           setProfile(null); // Clear profile on logout
         }
-
-        // *** Modify Redirect Logic ***
-        // Redirect if we now have a user but didn't before
-        if (currentUser && !previousUser) {
-          console.log(`Redirecting to / because currentUser exists (${currentUser.id}) and previousUser was null.`);
-          router.push('/'); // Redirect to homepage on login detection
-        }
-        // Optional: Redirect on sign out?
-        // if (!currentUser && previousUser) { // Check if user just logged out
-        //   console.log('Redirecting to /auth after sign out');
-        //   router.push('/auth');
-        // }
       }
     );
 
-    // Cleanup listener on component unmount
     return () => {
-      isMounted = false; // Set flag on unmount
+      isMounted = false;
       authListener?.subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Dependencies removed to ensure router isn't causing re-runs, manage manually
+  }, []); // Empty dependency array: runs only on mount and unmount
+
+  // Effect for handling redirection
+  useEffect(() => {
+    if (!isAuthReady || isLoadingProfile) {
+      // Don't redirect if initial auth isn't ready or profile is still loading
+      return;
+    }
+
+    if (user) {
+      if (profile && profile.user_id === user.id) {
+        if (pathname === '/auth') { 
+          console.log(`AuthContext: User ${user.id} logged in with profile, on /auth. Redirecting to /.`);
+          router.push('/');
+        }
+      } else if (!profile) {
+        console.log(`AuthContext: User ${user.id} logged in, but no profile. Current path: ${pathname}. No automatic redirect.`);
+      }
+    } else { 
+      // No user (logged out)
+      // If not on /auth page, you might want to redirect to /auth
+      // if (pathname !== '/auth') {
+      //   console.log(`AuthContext: User logged out, not on /auth. Redirecting to /auth.`);
+      //   router.push('/auth');
+      // }
+    }
+  }, [user, profile, isLoadingProfile, isAuthReady, router, pathname]);
 
   // Sign out function
   const signOut = async () => {
-    setLoading(true);
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Error signing out:', error);
-    } else {
-      // State updates handled by onAuthStateChange listener
-      console.log('Signed out successfully');
-    }
-    setLoading(false);
+    // Setting isLoadingProfile true here can prevent premature redirects during signout. 
+    // onAuthStateChange will eventually lead to isLoadingProfile becoming false after profile is nullified.
+    setIsLoadingProfile(true); 
+    await supabase.auth.signOut();
+    // onAuthStateChange will handle setting user, session, profile to null.
   };
 
   // The value provided to consuming components
-  const value = {
+  const contextValue: AuthContextType = {
     session,
     user,
     profile,
-    loading,
+    loading: !isAuthReady || isLoadingProfile,
     signOut,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
 }
 
 // Custom hook to use the AuthContext
