@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useAuth } from "@/features/auth/AuthContext"; // Adjust path if needed
+import { useTheme } from "next-themes"; // Import useTheme
 import {
   Avatar,
   AvatarFallback,
@@ -14,12 +15,17 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { LogOut, User as UserIcon } from "lucide-react"; // UserIcon for profile link if needed later
+import { LogOut, User as UserIcon, Sun, Moon, Laptop } from "lucide-react"; // Added Sun, Moon, Laptop icons
 
 export function UserNav() {
   const { user, profile, signOut, loading } = useAuth();
+  const { setTheme } = useTheme(); // Destructure setTheme
 
   if (loading) {
     // You might want a skeleton loader here instead of null
@@ -37,10 +43,10 @@ export function UserNav() {
   const getInitials = (name: string | null | undefined) => {
     if (!name) return "U"; // Default to 'U' for User
     const nameParts = name.split(" ");
-    if (nameParts.length > 1) {
+    if (nameParts.length > 1 && nameParts[0] && nameParts[1]) {
       return `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase();
     }
-    return name[0].toUpperCase();
+    return name?.[0]?.toUpperCase() || "U";
   };
 
   const displayName = profile?.display_name || user.email;
@@ -70,6 +76,30 @@ export function UserNav() {
             )}
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {/* Theme Selection Submenu */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="cursor-pointer">
+            {/* You can add a Palette icon here if you like */}
+            <span>Theme</span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem onClick={() => setTheme("light")} className="cursor-pointer">
+                <Sun className="mr-2 h-4 w-4" />
+                <span>Light</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("dark")} className="cursor-pointer">
+                <Moon className="mr-2 h-4 w-4" />
+                <span>Dark</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("system")} className="cursor-pointer">
+                <Laptop className="mr-2 h-4 w-4" />
+                <span>System</span>
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
         <DropdownMenuSeparator />
         {/* Potential future items:
         <DropdownMenuItem className="cursor-pointer">
