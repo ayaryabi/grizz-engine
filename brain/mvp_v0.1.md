@@ -345,6 +345,14 @@ CREATE POLICY "entities_owner_rls" ON entities
 
 *Last updated 2025‑04‑28.*
 
+## 6  Timezone Handling Strategy
+
+- Store user's IANA timezone string (e.g., 'America/Los_Angeles') in `profiles.timezone` (default 'UTC'), captured/updated from client.
+- All database timestamps (created_at, updated_at, etc.) remain in UTC.
+- Convert UTC timestamps to user's local time zone for display (UI) or time-relative queries (e.g., "today's items") using the stored profile timezone.
+- daily summary could include conversation info, created bytes and so on
+
+---
 
 # Grizz Monorepo Folder Structure (v0.1)
 
@@ -383,7 +391,7 @@ grizz/
 │  │   ├─ editor/          # TipTap setup, nodes, slash‑cmds
 │  │   ├─ bytes/           # ByteCard, ByteGrid, filters
 │  │   ├─ chat/            # ChatHistory, Composer, streaming hook
-│  │   └─ layout/          # Resizable panels, topbar, etc.
+│  │   └─ layout/          # Resizawhable panels, topbar, etc.
 │  │
 │  ├─ features/            # plug‑and‑play vertical slices
 │  │   ├─ auth/            # Supabase magic link flow
