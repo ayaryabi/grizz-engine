@@ -1,0 +1,91 @@
+"use client";
+
+import React from "react";
+import { useAuth } from "@/features/auth/AuthContext"; // Adjust path if needed
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { LogOut, User as UserIcon } from "lucide-react"; // UserIcon for profile link if needed later
+
+export function UserNav() {
+  const { user, profile, signOut, loading } = useAuth();
+
+  if (loading) {
+    // You might want a skeleton loader here instead of null
+    return (
+      <div className="h-8 w-8 bg-muted rounded-full animate-pulse"></div>
+    );
+  }
+
+  if (!user) {
+    // Optionally, render a sign-in button or nothing if user is not logged in
+    return null; 
+  }
+
+  // Determine Avatar Fallback (initials)
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return "U"; // Default to 'U' for User
+    const nameParts = name.split(" ");
+    if (nameParts.length > 1) {
+      return `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase();
+    }
+    return name[0].toUpperCase();
+  };
+
+  const displayName = profile?.display_name || user.email;
+  const avatarUrl = profile?.avatar_url;
+  const fallbackInitials = getInitials(displayName);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="relative h-8 w-8 rounded-full cursor-pointer">
+          <Avatar className="h-8 w-8">
+            {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName || "User avatar"} />}
+            <AvatarFallback>{fallbackInitials}</AvatarFallback>
+          </Avatar>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">
+              {profile?.display_name || "User"}
+            </p>
+            {user.email && (
+              <p className="text-xs leading-none text-muted-foreground">
+                {user.email}
+              </p>
+            )}
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {/* Potential future items:
+        <DropdownMenuItem className="cursor-pointer">
+          <UserIcon className="mr-2 h-4 w-4" />
+          <span>Profile</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem className="cursor-pointer">
+          Settings
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        */}
+        <DropdownMenuItem onClick={signOut} className="cursor-pointer">
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Sign out</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+} 

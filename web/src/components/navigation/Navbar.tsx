@@ -1,5 +1,6 @@
 import React from 'react';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { UserNav } from '@/components/navigation/UserNav';
 
 export default function Navbar() {
   return (
@@ -11,7 +12,7 @@ export default function Navbar() {
       <div className="flex items-center gap-x-2 sm:gap-x-4">
         {/* Other nav items like Brain icon can go here */}
         <ThemeToggle />
-        {/* User avatar/menu can go here */}
+        <UserNav />
       </div>
     </nav>
   );
