@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation'; // Import usePathname
 import { supabase } from '@/lib/supabase/supabase'; // Adjust path if needed
 import type { Session, User } from '@supabase/supabase-js';
@@ -40,11 +40,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
   const pathname = usePathname(); // Get current path
 
-  // Function to fetch user profile
-  const fetchProfileData = async (userId: string) => {
-    // Avoid fetching if profile for this user is already loaded and matches
-    if (profile?.user_id === userId) {
-      console.log(`AuthContext: Profile for user ${userId} already loaded. Skipping fetch.`);
+  const fetchProfileData = useCallback(async (userId: string | undefined) => {
+    if (!userId) {
+      setProfile(null);
+      setIsLoadingProfile(false);
+      return;
+    }
+    if (profile?.user_id === userId && !isLoadingProfile) {
+      // console.log(`AuthContext: Profile for user ${userId} already loaded and not loading. Skipping fetch.`);
       return;
     }
     
@@ -61,10 +64,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.error('AuthContext: Error fetching profile:', error);
         setProfile(null);
       } else if (data) {
-        console.log('AuthContext: Profile data fetched:', data);
+        // console.log('AuthContext: Profile data fetched:', data);
         setProfile(data as Profile);
       } else {
-        console.log('AuthContext: No profile found for user (might be first login).');
+        // console.log('AuthContext: No profile found for user.');
         setProfile(null);
       }
     } catch (e) {
@@ -73,93 +76,97 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } finally {
       setIsLoadingProfile(false);
     }
-  };
+  }, [profile?.user_id, isLoadingProfile]); // Added isLoadingProfile to dependencies
 
   // Effect for initial session check and setting up auth listener
   useEffect(() => {
     let isMounted = true;
-    setIsAuthReady(false); // Mark auth as not ready until initial check is done
+    setIsAuthReady(false);
 
-    // 1. Check for initial session
     supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
       if (!isMounted) return;
-
       const initialUser = initialSession?.user ?? null;
       setSession(initialSession);
       setUser(initialUser);
-
-      if (initialUser) {
-        await fetchProfileData(initialUser.id);
-      } else {
-        setProfile(null); // No user, so no profile
-      }
-      setIsAuthReady(true); // Initial session check complete
+      await fetchProfileData(initialUser?.id);
+      setIsAuthReady(true);
     });
 
-    // 2. Set up auth state change listener
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (_event, currentSession) => {
         if (!isMounted) return;
-        
-        console.log('AuthContext: Auth state changed:', _event, currentSession);
+        // console.log('AuthContext: Auth state changed:', _event);
         const newSession = currentSession;
         const newUser = newSession?.user ?? null;
-        const oldUserId = user?.id; // Get user ID from previous state (closure)
-
+        
         setSession(newSession);
-        setUser(newUser);
-
-        if (newUser) {
-          // Fetch profile if user ID has changed, or if it's a new user and profile wasn't for them
-          if (newUser.id !== oldUserId || profile?.user_id !== newUser.id) {
-            await fetchProfileData(newUser.id);
-          }
-        } else {
-          setProfile(null); // Clear profile on logout
+        setUser(newUser); // This will trigger profile fetch via the other useEffect if user changes
+        if (!newUser) {
+            setProfile(null); // Clear profile if user is logged out
         }
       }
     );
-
     return () => {
       isMounted = false;
       authListener?.subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array: runs only on mount and unmount
+  }, []); // fetchProfileData is memoized, so it's stable here
 
-  // Effect for handling redirection
+  // Effect to fetch profile when user object changes and is not null
   useEffect(() => {
-    if (!isAuthReady || isLoadingProfile) {
-      // Don't redirect if initial auth isn't ready or profile is still loading
-      return;
+    if (user && user.id !== profile?.user_id) {
+        fetchProfileData(user.id);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]); // Depends on user object and memoized fetchProfileData
 
-    if (user) {
-      if (profile && profile.user_id === user.id) {
-        if (pathname === '/auth') { 
-          console.log(`AuthContext: User ${user.id} logged in with profile, on /auth. Redirecting to /.`);
-          router.push('/');
+  // Effect for handling re-check on tab visibility change
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        console.log("AuthContext: Tab became visible, re-checking auth state.");
+        setIsAuthReady(false); // Indicate we are re-checking
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const currentUser = currentSession?.user ?? null;
+        setSession(currentSession);
+        setUser(currentUser);
+        if (currentUser) {
+          // Only fetch profile if user exists and it's different from current or not loading
+          if (currentUser.id !== profile?.user_id || !profile) {
+             await fetchProfileData(currentUser.id);
+          }
+        } else {
+          setProfile(null); // No user, clear profile
         }
-      } else if (!profile) {
-        console.log(`AuthContext: User ${user.id} logged in, but no profile. Current path: ${pathname}. No automatic redirect.`);
+        setIsAuthReady(true);
       }
-    } else { 
-      // No user (logged out)
-      // If not on /auth page, you might want to redirect to /auth
-      // if (pathname !== '/auth') {
-      //   console.log(`AuthContext: User logged out, not on /auth. Redirecting to /auth.`);
-      //   router.push('/auth');
-      // }
-    }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchProfileData]); // Re-run if fetchProfileData changes (it shouldn't often due to useCallback)
+
+  // Effect for handling redirection (simplified, relies on other effects to set state)
+  useEffect(() => {
+    if (!isAuthReady || isLoadingProfile) return;
+
+    if (user && profile && pathname === '/auth') {
+      router.push('/');
+    } 
+    // else if (!user && pathname !== '/auth') {
+    //   router.push('/auth'); // Optional: redirect to auth if logged out and not on auth page
+    // }
   }, [user, profile, isLoadingProfile, isAuthReady, router, pathname]);
 
   // Sign out function
   const signOut = async () => {
-    // Setting isLoadingProfile true here can prevent premature redirects during signout. 
-    // onAuthStateChange will eventually lead to isLoadingProfile becoming false after profile is nullified.
-    setIsLoadingProfile(true); 
+    setIsLoadingProfile(true); // To prevent UI flicker or race conditions during sign out
     await supabase.auth.signOut();
-    // onAuthStateChange will handle setting user, session, profile to null.
+    // Auth listener will handle clearing session, user, and profile state
   };
 
   // The value provided to consuming components
