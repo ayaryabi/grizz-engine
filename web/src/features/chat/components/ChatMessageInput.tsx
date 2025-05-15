@@ -3,31 +3,29 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Mic, Send } from "lucide-react";
+import { Send } from "lucide-react";
 
 interface ChatMessageInputProps {
-  onSendMessage: (messageText: string) => void; // Uncommented and defined
-  // onStartRecording: () => void; // For voice memo later
-  // onStopRecording: () => void; // For voice memo later
-  // isRecording: boolean; // For voice memo later
+  onSendMessage: (messageText: string) => void;
 }
 
-export default function ChatMessageInput({ onSendMessage }: ChatMessageInputProps) { // Added onSendMessage to destructuring
+export default function ChatMessageInput({ onSendMessage }: ChatMessageInputProps) {
   const [inputText, setInputText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputText(event.target.value);
-    // Removed adjustTextareaHeight from here to avoid calling it on every keystroke if not needed
-    // It will be called via useEffect or after sending a message
   };
 
   const adjustTextareaHeight = () => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'; // Reset height
+      textareaRef.current.style.height = 'auto'; // Reset height first
       const scrollHeight = textareaRef.current.scrollHeight;
-      const maxHeight = 120; // As defined by max-h-[120px]
-      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+      // A common min-height for the textarea itself (e.g. one line)
+      // The overall component height will be larger due to padding in the wrapper
+      const minTextareaHeight = 24; // Approx 1.5rem or line-height
+      const maxHeight = 120; // Max height for textarea content before scrolling
+      textareaRef.current.style.height = `${Math.max(minTextareaHeight, Math.min(scrollHeight, maxHeight))}px`;
     }
   };
 
@@ -38,60 +36,47 @@ export default function ChatMessageInput({ onSendMessage }: ChatMessageInputProp
   const handleSend = () => {
     const trimmedInput = inputText.trim();
     if (trimmedInput) {
-      onSendMessage(trimmedInput); // Use the prop
+      onSendMessage(trimmedInput);
       setInputText("");
-      // After sending, explicitly reset height to auto, then let useEffect adjust if needed
       if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
+        // Reset to auto and let useEffect adjust, or set to a defined initial height
+        textareaRef.current.style.height = 'auto'; 
       }
     }
   };
 
-  const handleVoiceMemo = () => {
-    console.log("Voice memo clicked");
-    // onStartRecording(); // Implement later
-  };
-
   const handleKeyPress = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault(); // Prevent newline in textarea
+      event.preventDefault();
       handleSend();
     }
   };
 
-  // Removed redundant useEffect for adjustTextareaHeight as it's covered by the one dependent on inputText
-
   return (
-    <div className="flex items-end gap-2 p-2 sm:p-3 border-t border-border bg-background">
-      <Button 
-        variant="ghost" 
-        size="icon" 
-        className="p-2 h-10 w-10 shrink-0" 
-        onClick={handleVoiceMemo}
-        aria-label="Start voice memo"
-      >
-        <Mic className="h-5 w-5" />
-      </Button>
-      <Textarea
-        ref={textareaRef}
-        value={inputText}
-        onChange={handleInputChange}
-        onKeyPress={handleKeyPress}
-        onInput={adjustTextareaHeight} // Added onInput for better responsiveness while typing/pasting
-        placeholder="Type your message..."
-        className="flex-1 resize-none overflow-y-hidden rounded-lg border border-input p-2.5 text-sm min-h-[40px] max-h-[120px]"
-        rows={1} // Start with 1 row, will auto-grow
-      />
-      <Button 
-        variant="default" // Or your primary variant
-        size="icon" 
-        className="p-2 h-10 w-10 shrink-0" 
-        onClick={handleSend}
-        disabled={!inputText.trim()}
-        aria-label="Send message"
-      >
-        <Send className="h-5 w-5" />
-      </Button>
+    <div className="p-3 sm:p-4 border-t border-border bg-background">
+      <div className="flex items-end w-full p-1 rounded-xl border border-input bg-muted focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background transition-shadow duration-200 shadow-sm min-h-[56px]">
+        <Textarea
+          ref={textareaRef}
+          value={inputText}
+          onChange={handleInputChange}
+          onKeyPress={handleKeyPress}
+          onInput={adjustTextareaHeight}
+          className="appearance-none flex-1 resize-none overflow-y-hidden bg-transparent dark:bg-transparent text-sm 
+                     border-none focus:ring-0 focus:outline-none focus-visible:ring-0 
+                     py-2.5 px-3 min-h-[24px] max-h-[120px] placeholder:text-muted-foreground/80"
+          rows={1}
+        />
+        <Button 
+          variant="default"
+          size="icon" 
+          className="shrink-0 rounded-lg w-9 h-9 sm:w-10 sm:h-10 mr-1 mb-0.5 self-end" // Adjusted margin and self-alignment
+          onClick={handleSend}
+          disabled={!inputText.trim()}
+          aria-label="Send message"
+        >
+          <Send className="w-4 h-4 sm:w-5 sm:h-5" />
+        </Button>
+      </div>
     </div>
   );
 } 
