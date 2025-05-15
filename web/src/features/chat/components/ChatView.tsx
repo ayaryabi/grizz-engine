@@ -44,26 +44,25 @@ export default function ChatView() {
   };
 
   return (
-    // Main container for the chat interface: centered, max-width
-    <div className="flex flex-col h-full max-w-3xl mx-auto w-full bg-background">
+    // Main container for the chat interface: full width to push scrollbar to edge
+    <div className="flex flex-col h-full w-full">
       
-      {/* 1. Message Display Area */}
-      {/* 'flex-1' makes this area expand to fill available vertical space. */}
-      {/* 'overflow-y-auto' makes ONLY this area scrollable for messages. */}
-      {/* 'pb-X' (padding-bottom) is crucial to prevent messages from being hidden *behind* the fixed ChatInput. */}
-      {/* The value of X should be roughly the height of your ChatInput bar. Let's use pb-4 as a placeholder. */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-4 space-y-4">
-        <p className="text-sm text-muted-foreground text-center">Message list placeholder</p>
-        {/* Placeholder for MessageList component - mapping over mockMessages for now */}
-        {messages.map((msg) => (
-          <ChatMessage key={msg.id} message={msg} />
-        ))}
+      {/* Message display area */}
+      <div className="flex-1 overflow-y-auto w-full pb-4">
+        <div className="max-w-3xl mx-auto w-full p-4 sm:p-6 space-y-4">
+          <p className="text-sm text-muted-foreground text-center">Message list placeholder</p>
+          {messages.map((msg) => (
+            <ChatMessage key={msg.id} message={msg} />
+          ))}
+        </div>
       </div>
 
-      {/* Replace placeholder with ChatMessageInput component */}
-      <ChatMessageInput onSendMessage={handleSendMessage} />
-      {/* <ChatMessageInput onSendMessage={handleSendMessage} /> // How it will be used later */}
-
+      {/* Input area */}
+      <div className="w-full bg-background">
+        <div className="max-w-3xl mx-auto">
+          <ChatMessageInput onSendMessage={handleSendMessage} />
+        </div>
+      </div>
     </div>
   );
 } 

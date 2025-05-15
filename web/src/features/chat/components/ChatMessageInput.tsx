@@ -53,7 +53,7 @@ export default function ChatMessageInput({ onSendMessage }: ChatMessageInputProp
   };
 
   return (
-    <div className="p-3 sm:p-4 border-t border-border bg-background">
+    <div className="p-3 sm:p-4 bg-background">
       <div className="flex items-end w-full p-1 rounded-xl border border-input bg-muted focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background transition-shadow duration-200 shadow-sm min-h-[56px]">
         <Textarea
           ref={textareaRef}
