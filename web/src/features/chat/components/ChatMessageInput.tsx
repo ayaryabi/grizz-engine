@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Send } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 
 interface ChatMessageInputProps {
   onSendMessage: (messageText: string) => void;
@@ -69,12 +69,12 @@ export default function ChatMessageInput({ onSendMessage }: ChatMessageInputProp
         <Button 
           variant="default"
           size="icon" 
-          className="shrink-0 rounded-lg w-9 h-9 sm:w-10 sm:h-10 mr-1 mb-0.5 self-end" // Adjusted margin and self-alignment
+          className="shrink-0 rounded-full w-9 h-9 sm:w-10 sm:h-10 mr-1 mb-0.5 self-end"
           onClick={handleSend}
           disabled={!inputText.trim()}
           aria-label="Send message"
         >
-          <Send className="w-4 h-4 sm:w-5 sm:h-5" />
+          <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />
         </Button>
       </div>
     </div>

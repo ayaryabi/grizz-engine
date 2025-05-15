@@ -1,10 +1,10 @@
 "use client"; // If it manages state or uses hooks like useState for messages later
 
 import React, { useState, useEffect } from 'react'; // Added useState and useEffect
-import ChatMessageList from './ChatMessageList'; // Import the new component
 import ChatMessageInput from './ChatMessageInput'; // Import the new component
 import { Message } from '@/lib/types'; // Import the Message type
 import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
+import ChatMessage from './ChatMessage'; // Import the ChatMessage component
 
 // Later, we'll import MessageList and ChatInput here
 // import MessageList from './MessageList';
@@ -56,16 +56,7 @@ export default function ChatView() {
         <p className="text-sm text-muted-foreground text-center">Message list placeholder</p>
         {/* Placeholder for MessageList component - mapping over mockMessages for now */}
         {messages.map((msg) => (
-          <div 
-            key={msg.id} 
-            className={`p-3 rounded-lg shadow-md max-w-md lg:max-w-lg xl:max-w-xl
-                        ${msg.sender === 'user' 
-                          ? 'bg-primary text-primary-foreground ml-auto rounded-br-none' 
-                          : 'bg-muted text-muted-foreground mr-auto rounded-bl-none'}
-                      `}
-          >
-            {msg.text}
-          </div>
+          <ChatMessage key={msg.id} message={msg} />
         ))}
       </div>
 
