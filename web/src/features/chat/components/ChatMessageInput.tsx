@@ -7,9 +7,10 @@ import { ArrowUp } from "lucide-react";
 
 interface ChatMessageInputProps {
   onSendMessage: (messageText: string) => void;
+  isLoading?: boolean;
 }
 
-export default function ChatMessageInput({ onSendMessage }: ChatMessageInputProps) {
+export default function ChatMessageInput({ onSendMessage, isLoading = false }: ChatMessageInputProps) {
   const [inputText, setInputText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -65,13 +66,15 @@ export default function ChatMessageInput({ onSendMessage }: ChatMessageInputProp
                      border-none focus:ring-0 focus:outline-none focus-visible:ring-0 
                      py-2.5 px-3 min-h-[24px] max-h-[120px] placeholder:text-muted-foreground/80"
           rows={1}
+          disabled={isLoading}
+          placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
         />
         <Button 
           variant="default"
           size="icon" 
           className="shrink-0 rounded-full w-9 h-9 sm:w-10 sm:h-10 mr-1 mb-0.5 self-end"
           onClick={handleSend}
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || isLoading}
           aria-label="Send message"
         >
           <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />

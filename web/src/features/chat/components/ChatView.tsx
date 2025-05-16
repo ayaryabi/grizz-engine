@@ -1,46 +1,63 @@
 "use client"; // If it manages state or uses hooks like useState for messages later
 
-import React, { useState, useEffect } from 'react'; // Added useState and useEffect
-import ChatMessageInput from './ChatMessageInput'; // Import the new component
-import { Message } from '@/lib/types'; // Import the Message type
-import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
-import ChatMessage from './ChatMessage'; // Import the ChatMessage component
+import React, { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import ChatMessageInput from './ChatMessageInput';
+import { Message } from '@/lib/types';
+import { v4 as uuidv4 } from 'uuid';
+import ChatMessage from './ChatMessage';
 
 // Later, we'll import MessageList and ChatInput here
 // import MessageList from './MessageList';
 // import ChatInput from './ChatInput';
 
 export default function ChatView() {
-  const [messages, setMessages] = useState<Message[]>([]); // Initial messages state
+  const [messages, setMessages] = useState<Message[]>([]);
 
-  // Load initial mock messages (can be removed later or fetched from API)
-  useEffect(() => {
-    setMessages([
-      { id: uuidv4(), text: 'Hello there! This is a user message.', sender: 'user', timestamp: new Date().toISOString() },
-      { id: uuidv4(), text: 'Hi! This is an AI response.', sender: 'ai', timestamp: new Date().toISOString() },
-      { id: uuidv4(), text: 'How are you today?', sender: 'user', timestamp: new Date().toISOString() },
-    ]);
-  }, []);
+  const { mutate: sendMessage, isPending } = useMutation({
+    mutationFn: async (text: string) => {
+      const response = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: text }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // Add AI response
+      const aiMessage: Message = {
+        id: uuidv4(),
+        text: data.response,
+        sender: 'ai',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    },
+    onError: (error) => {
+      console.error('Failed to send message:', error);
+      // Optionally show an error message to the user
+    }
+  });
 
   const handleSendMessage = (text: string) => {
+    // Add user message immediately
     const newUserMessage: Message = {
       id: uuidv4(),
       text,
       sender: 'user',
       timestamp: new Date().toISOString(),
     };
-    setMessages((prevMessages) => [...prevMessages, newUserMessage]);
+    setMessages(prev => [...prev, newUserMessage]);
 
-    // Mock AI response
-    setTimeout(() => {
-      const aiResponse: Message = {
-        id: uuidv4(),
-        text: "That's interesting! Tell me more.",
-        sender: 'ai',
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prevMessages) => [...prevMessages, aiResponse]);
-    }, 1000); // Simulate a delay for AI response
+    // Send to backend
+    sendMessage(text);
   };
 
   return (
@@ -60,7 +77,7 @@ export default function ChatView() {
       {/* Input area */}
       <div className="w-full bg-background">
         <div className="max-w-3xl mx-auto">
-          <ChatMessageInput onSendMessage={handleSendMessage} />
+          <ChatMessageInput onSendMessage={handleSendMessage} isLoading={isPending} />
         </div>
       </div>
     </div>
