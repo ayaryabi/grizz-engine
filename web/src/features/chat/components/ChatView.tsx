@@ -14,6 +14,7 @@ export default function ChatView() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const currentMessageIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Connect to the echo WebSocket endpoint
@@ -25,19 +26,40 @@ export default function ChatView() {
     };
     ws.onclose = () => {
       setIsConnected(false);
+      currentMessageIdRef.current = null;
     };
     ws.onerror = () => {
       setIsConnected(false);
+      currentMessageIdRef.current = null;
     };
     ws.onmessage = (event) => {
-      // Add AI (echoed) message
-      const aiMessage: Message = {
-        id: uuidv4(),
-        text: event.data,
-        sender: 'ai',
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, aiMessage]);
+      // Append to current AI message or create a new one
+      if (!currentMessageIdRef.current) {
+        // Start a new AI message
+        const messageId = uuidv4();
+        currentMessageIdRef.current = messageId;
+        
+        const aiMessage: Message = {
+          id: messageId,
+          text: event.data,
+          sender: 'ai',
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      } else {
+        // Append to existing message
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastMessage = updated[updated.length - 1];
+          if (lastMessage && lastMessage.id === currentMessageIdRef.current) {
+            updated[updated.length - 1] = {
+              ...lastMessage,
+              text: lastMessage.text + event.data,
+            };
+          }
+          return updated;
+        });
+      }
     };
 
     return () => {
@@ -46,6 +68,9 @@ export default function ChatView() {
   }, []);
 
   const handleSendMessage = (text: string) => {
+    // Reset the current message ID so a new AI message will be created
+    currentMessageIdRef.current = null;
+    
     // Add user message immediately
     const newUserMessage: Message = {
       id: uuidv4(),
