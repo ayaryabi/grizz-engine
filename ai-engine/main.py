@@ -1,8 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from app.api.ws import router as ws_router
+from app.core.config import get_settings
 
-app = FastAPI(title="Grizz Chat API")
+settings = get_settings()
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    version=settings.VERSION,
+)
 
 # CORS configuration
 app.add_middleware(
@@ -12,6 +19,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(ws_router)
 
 class ChatMessage(BaseModel):
     message: str
@@ -28,3 +37,7 @@ async def chat(message: ChatMessage):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/")
+async def root():
+    return {"message": "Grizz Chat API is running"}
