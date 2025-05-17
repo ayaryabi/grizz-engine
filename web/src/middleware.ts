@@ -2,13 +2,14 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // Create an initial response object
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   })
 
-  // Create a Supabase client specific to this middleware request
+  // Create the Supabase client
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -18,17 +19,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: CookieOptions) {
-          // If the cookie is updated, update the request cookies and response cookies
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
+          // CRITICAL: Don't create a new response - modify the existing one
           response.cookies.set({
             name,
             value,
@@ -36,17 +27,7 @@ export async function middleware(request: NextRequest) {
           })
         },
         remove(name: string, options: CookieOptions) {
-          // If the cookie is removed, update the request cookies and response cookies
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
+          // CRITICAL: Don't create a new response - modify the existing one
           response.cookies.set({
             name,
             value: '',
@@ -57,34 +38,31 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Refresh session if expired - required for Server Components
-  // https://supabase.com/docs/guides/auth/auth-helpers/nextjs#managing-session-with-middleware
-  const { data: { user } } = await supabase.auth.getUser()
+  // CRITICAL: First get the session, which will refresh tokens if needed
+  const { data: { session } } = await supabase.auth.getSession()
+  
+  // For debugging - log if we have a session
+  console.log(`Middleware running for path: ${request.nextUrl.pathname}`)
+  console.log(`Session exists: ${!!session}`)
+  if (session) console.log(`User ID: ${session.user.id}`)
 
   const { pathname } = request.nextUrl;
-
-  // Define protected routes (adjust as needed)
   const protectedRoutes = ['/dashboard', '/chat', '/settings', '/document', '/bytes']; 
-  // Define auth route
   const authRoute = '/auth';
-
   const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
 
-  // Redirect to login if trying to access protected route without session
-  if (isProtectedRoute && !user) {
-    console.log('Middleware: No user, redirecting to auth from', pathname);
-    return NextResponse.redirect(new URL(authRoute, request.url))
+  // NEW APPROACH: Only redirect from auth page when we know user is logged in
+  // For protected routes, we'll let client-side auth handle the redirect to login
+  // This avoids the race condition between middleware and client auth state
+
+  // Case: Auth route with session
+  if (pathname === authRoute && session) {
+    console.log('Session found on auth page, redirecting to home')
+    return NextResponse.redirect(new URL('/', request.url))
   }
 
-  // Redirect to homepage if trying to access auth route with session
-  // Re-enabling this block and setting redirect to root
-  if (pathname === authRoute && user) {
-    // Default redirect path set to homepage '/' for now
-    const redirectPath = '/'; 
-    console.log('Middleware: User found, redirecting to homepage from', pathname);
-    return NextResponse.redirect(new URL(redirectPath, request.url))
-  }
-
+  // All other cases: Return the response with refreshed cookies
+  // Let client-side authentication handle protected routes access
   return response
 }
 
@@ -96,12 +74,7 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
-    // Add specific routes if needed, but the above pattern is generally good
-    // '/dashboard/:path*',
-    // '/chat/:path*',
-    // '/auth',
   ],
 } 

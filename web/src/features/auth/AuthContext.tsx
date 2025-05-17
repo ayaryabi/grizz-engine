@@ -152,14 +152,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Effect for handling redirection (simplified, relies on other effects to set state)
   useEffect(() => {
+    // Only proceed if auth state is fully loaded and we're not loading profile
     if (!isAuthReady || isLoadingProfile) return;
 
-    if (user && profile && pathname === '/auth') {
-      router.push('/');
-    } 
-    // else if (!user && pathname !== '/auth') {
-    //   router.push('/auth'); // Optional: redirect to auth if logged out and not on auth page
-    // }
+    // List of protected routes that require authentication
+    const protectedRoutes = ['/dashboard', '/chat', '/settings', '/document', '/bytes'];
+    const isProtectedRoute = protectedRoutes.some(route => pathname?.startsWith(route));
+    
+    // If we're on a protected route and no user is found, redirect to auth
+    if (isProtectedRoute && !user) {
+      console.log('AuthContext: No user found on protected route, redirecting to /auth');
+      router.push('/auth');
+    }
+
+    // Let middleware handle redirect from auth page when logged in
   }, [user, profile, isLoadingProfile, isAuthReady, router, pathname]);
 
   // Sign out function
