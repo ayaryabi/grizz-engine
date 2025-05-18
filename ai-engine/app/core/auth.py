@@ -32,109 +32,65 @@ def get_token_from_request(request: Request) -> Optional[str]:
     # Could also check cookies if needed
     return None
 
-# Function that can be used as a dependency or called directly
-async def get_current_user_id_from_token(
-    token: Optional[str] = None,
-    request: Request = Depends()
-) -> str:
+# Core JWT validation logic for both HTTP and WebSocket
+def validate_jwt_token(token: str) -> str:
     """
-    Validate JWT token and return user_id. 
-    Can be called in two ways:
-    1. As a FastAPI dependency that extracts token from request
-    2. Directly with a token string (for WebSocket connections)
+    Validate JWT token and return user_id (sub claim).
+    Raises HTTPException or jwt exceptions on failure.
     """
-    # If token not passed directly, try to get it from the request
-    if token is None:
-        token = get_token_from_request(request)
-        
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated: Token missing"
         )
-
     if not settings.SUPABASE_JWT_SECRET:
         logger.error("SUPABASE_JWT_SECRET is not configured on the server. Cannot validate token.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Authentication configuration error on server."
         )
-
     try:
-        # Common Supabase JWT audience
         expected_audience = "authenticated"
-        
-        # Construct expected issuer URL from NEXT_PUBLIC_SUPABASE_URL
-        # e.g., https://your-project-ref.supabase.co becomes https://your-project-ref.supabase.co/auth/v1
         expected_issuer = None
         if settings.NEXT_PUBLIC_SUPABASE_URL:
             if settings.NEXT_PUBLIC_SUPABASE_URL.endswith('/'):
                 expected_issuer = f"{settings.NEXT_PUBLIC_SUPABASE_URL}auth/v1"
             else:
                 expected_issuer = f"{settings.NEXT_PUBLIC_SUPABASE_URL}/auth/v1"
-        else:
-            logger.warning("NEXT_PUBLIC_SUPABASE_URL is not set; cannot validate JWT issuer.")
-            # Decide if issuer validation is critical. If so, raise error or handle.
-
-        logger.debug(f"Attempting to decode JWT. Token prefix: {token[:20]}...")
-        logger.debug(f"Expected audience: {expected_audience}")
-        logger.debug(f"Expected issuer: {expected_issuer}")
-        logger.debug(f"Using JWT Secret: {'********' if settings.SUPABASE_JWT_SECRET else 'NOT SET'}")
-
-
         payload = jwt.decode(
             token,
             settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"], # Supabase default for JWTs signed with the shared secret
+            algorithms=["HS256"],
             audience=expected_audience
-            # Issuer validation can be added here if expected_issuer is not None:
-            # issuer=expected_issuer 
         )
-        logger.debug(f"JWT decoded successfully. Payload: {payload}")
-
-        # Validate issuer if NEXT_PUBLIC_SUPABASE_URL was set
         if expected_issuer and payload.get('iss') != expected_issuer:
-            logger.warning(f"Token issuer mismatch. Expected: {expected_issuer}, Got: {payload.get('iss')}")
             raise jwt.InvalidIssuerError(f"Token issuer mismatch. Expected: {expected_issuer}, Got: {payload.get('iss')}")
-
-        # Check for expiration ('exp' claim is a UNIX timestamp)
         if "exp" not in payload:
-            logger.warning("Token has no 'exp' (expiration) claim.")
-            raise jwt.MissingRequiredClaimError("exp") # Or handle as invalid
-            
-        # Ensure 'exp' is compared against current UTC timestamp
-        # datetime.fromtimestamp(payload["exp"], tz=timezone.utc) for timezone-aware comparison
-        # datetime.utcnow() is naive, so better to use timezone.utc for consistency
+            raise jwt.MissingRequiredClaimError("exp")
         expiration_time = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
         current_time_utc = datetime.now(timezone.utc)
-
         if current_time_utc > expiration_time:
-            logger.warning(f"Token has expired. Expiry: {expiration_time}, Current: {current_time_utc}")
             raise jwt.ExpiredSignatureError("Token has expired")
-
         user_id = payload.get("sub")
         if not user_id:
-            logger.warning("User ID (sub) missing from token payload.")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: User ID (sub) missing"
             )
-        
-        logger.info(f"Token validated successfully for user_id: {user_id}")
         return user_id
-
     except jwt.ExpiredSignatureError:
-        logger.warning(f"Token validation failed: Expired token. Input token prefix: {token[:20]}...")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
     except jwt.InvalidAudienceError:
-        logger.warning(f"Token validation failed: Invalid audience. Input token prefix: {token[:20]}...")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token audience")
-    except jwt.InvalidIssuerError: # Catch explicitly if issuer validation is active
-        logger.warning(f"Token validation failed: Invalid issuer. Input token prefix: {token[:20]}...")
+    except jwt.InvalidIssuerError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token issuer")
     except jwt.PyJWTError as e:
-        logger.warning(f"Token validation failed: {str(e)}. Input token prefix: {token[:20]}...")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid token: {str(e)}")
     except Exception as e:
         logger.error(f"Unexpected error during token validation for token prefix {token[:20]}...", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error during token validation") 
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error during token validation")
+
+# HTTP dependency for FastAPI endpoints
+async def get_current_user_id_from_token(request: Request) -> str:
+    token = get_token_from_request(request)
+    return validate_jwt_token(token) 

@@ -62,7 +62,6 @@ export async function POST(request: Request) {
     // Construct the URL for the GET request to FastAPI
     // Use the correct endpoint path from main.py - conversation_router is mounted at /api
     const url = new URL(`${FASTAPI_BACKEND_URL}/api/conversations/today`);
-    url.searchParams.append('user_id', userId);
     url.searchParams.append('tz', timezone);
     
     console.log(`Calling FastAPI at: ${url.toString()}`);
@@ -74,6 +73,7 @@ export async function POST(request: Request) {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
       console.log('FastAPI response status:', fastApiResponse.status);

@@ -4,7 +4,7 @@ import json # For sending simple JSON responses like errors
 from urllib.parse import parse_qs # Import to parse query parameters
 
 # Using an async function directly instead of Depends for WebSocket context
-from app.core.auth import get_current_user_id_from_token 
+from app.core.auth import validate_jwt_token
 from app.llm.openai_client import stream_chat_completion
 
 logger = logging.getLogger(__name__)
@@ -42,9 +42,9 @@ async def websocket_chat_endpoint(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
             
-        # Manually authenticate using our token function
+        # Authenticate using the new validate_jwt_token function
         try:
-            authed_user_id = await get_current_user_id_from_token(token)
+            authed_user_id = validate_jwt_token(token)
         except HTTPException as auth_exc:
             logger.warning(f"WebSocket authentication failed: {auth_exc.detail}")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

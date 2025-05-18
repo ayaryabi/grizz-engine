@@ -1,17 +1,18 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, time
 import pytz
 
 from app.db.database import get_db
 from app.db.models import Conversation
+from app.core.auth import get_current_user_id_from_token
 
 router = APIRouter()
 
 @router.get("/conversations/today")
 async def get_or_create_today_conversation(
-    user_id: str,                           # temp until real auth dep
     tz: str = Query("UTC", description="IANA timezone, e.g. Europe/Berlin"),
+    user_id: str = Depends(get_current_user_id_from_token),
     db: Session = Depends(get_db),
 ):
     # 1) Resolve timezone safely
