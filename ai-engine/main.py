@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from app.api.ws import router as ws_router
-from app.api.db_test import router as db_test_router
+# from app.api.db_test import router as db_test_router # Removed import
 from app.api.conversation import router as conversation_router
 from app.core.config import get_settings
 from app.db.database import engine
@@ -28,7 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(ws_router)
-app.include_router(db_test_router, prefix="/test", tags=["test"])
+# app.include_router(db_test_router, prefix="/test", tags=["test"]) # Removed usage
 app.include_router(conversation_router, prefix="/api", tags=["conversations"])
 
 class ChatMessage(BaseModel):
