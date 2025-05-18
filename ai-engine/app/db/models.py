@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Index
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Date, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -16,14 +16,15 @@ class Conversation(Base):
     title = Column(String(100), default="New Conversation")
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    date = Column(DateTime, nullable=True)  # For storing the conversation's date
-    timezone = Column(String, nullable=True)  # For storing the user's timezone
+    conv_day = Column(Date, nullable=False)  # For storing the conversation's date (UTC)
+    user_tz = Column(String, nullable=False, default="UTC")  # For storing the user's timezone
     
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
     
-    # Add index for faster querying by user_id
+    # Add indices for faster querying
     __table_args__ = (
         Index('idx_conversation_user_id', 'user_id'),
+        Index('idx_conversation_user_day', 'user_id', 'conv_day', unique=True),
     )
 
 class Message(Base):
