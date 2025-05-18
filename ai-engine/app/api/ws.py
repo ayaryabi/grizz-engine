@@ -10,13 +10,11 @@ from app.llm.openai_client import stream_chat_completion
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Remove the old /ws/echo as it's not part of this focused step
-
-# Add a WebSocket endpoint that doesn't require a specific conversation ID
-@router.websocket("/ws/chat")
-async def websocket_default_chat_endpoint(websocket: WebSocket):
-    """Simplified WebSocket endpoint that uses 'test' as the default conversation ID."""
-    await websocket_chat_endpoint(websocket, "test")
+# Default endpoint no longer needed since we're getting real conversation IDs
+# @router.websocket("/ws/chat")
+# async def websocket_default_chat_endpoint(websocket: WebSocket):
+#     """Simplified WebSocket endpoint that uses 'test' as the default conversation ID."""
+#     await websocket_chat_endpoint(websocket, "test")
 
 @router.websocket("/ws/chat/{conversation_id}")
 async def websocket_chat_endpoint(

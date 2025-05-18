@@ -15,7 +15,7 @@ interface ChatViewProps {
 
 export default function ChatView({ conversationId }: ChatViewProps) {
   // If conversationId is provided, use it, otherwise let useChat use its default "test"
-  const { messages, isConnected, sendMessage } = useChat(conversationId ? { conversationId } : {});
+  const { messages, isConnected, sendMessage, loading } = useChat(conversationId ? { conversationId } : {});
 
   return (
     // Main container for the chat interface: full width to push scrollbar to edge
@@ -25,7 +25,10 @@ export default function ChatView({ conversationId }: ChatViewProps) {
       <div className="flex-1 overflow-y-auto w-full pb-4">
         <div className="max-w-3xl mx-auto w-full p-4 sm:p-6 space-y-4">
           <ChatMessageList messages={messages} />
-          {!isConnected && (
+          {loading && (
+            <p className="text-sm text-muted-foreground text-center">Loading conversation...</p>
+          )}
+          {!loading && !isConnected && (
             <p className="text-sm text-muted-foreground text-center">Connecting to chat server...</p>
           )}
         </div>
