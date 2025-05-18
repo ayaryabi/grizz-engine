@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     try {
       requestBody = await request.json();
       console.log('Request body:', requestBody);
+      console.log('Timezone sent to backend:', requestBody.timezone);
     } catch (e) {
       console.error('Failed to parse request body:', e);
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
     // Use the correct endpoint path from main.py - conversation_router is mounted at /api
     const url = new URL(`${FASTAPI_BACKEND_URL}/api/conversations/today`);
     url.searchParams.append('user_id', userId);
-    url.searchParams.append('timezone', timezone);
+    url.searchParams.append('tz', timezone);
     
     console.log(`Calling FastAPI at: ${url.toString()}`);
 
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
     let conversationData;
     try {
       conversationData = await fastApiResponse.json();
-      console.log('Successfully got conversation data:', conversationData);
+      console.log('FastAPI conversation data:', conversationData);
     } catch (e: any) {
       console.error('Error parsing FastAPI response:', e);
       return NextResponse.json({ 

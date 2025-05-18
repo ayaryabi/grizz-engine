@@ -18,26 +18,33 @@ async def get_or_create_today_conversation(
     try:
         zone = pytz.timezone(tz)
     except pytz.UnknownTimeZoneError:
-        zone = pytz.UTC                                          # fallback
+        zone = pytz.UTC  # fallback
 
-    # 2) Compute local midnight *today*, then convert to UTC DATE
-    today_local = datetime.now(zone).date()                      # ← fixed
-    naive_midnight = datetime.combine(today_local, time.min)     # 00:00
-    local_midnight   = zone.localize(naive_midnight)
-    conv_day_utc: date = local_midnight.astimezone(pytz.UTC).date()
+    print(f"Received tz: {tz}")
+    print(f"Zone: {zone}")
 
-    # 3) Lookup or create
+    # 2) Compute user's local date (calendar day)
+    today_local = datetime.now(zone).date()  # User's local date (e.g., 2025-05-19)
+    print(f"today_local: {today_local}")
+    print(f"Querying for user_id={user_id}, conv_day={today_local}")
+
+    # 3) Lookup or create using local date
     convo = (
         db.query(Conversation)
-        .filter_by(user_id=user_id, conv_day=conv_day_utc)
+        .filter_by(user_id=user_id, conv_day=today_local)
         .first()
     )
+
+    if convo:
+        print(f"Found conversation: {convo.id}, conv_day={convo.conv_day}")
+    else:
+        print("No conversation found, creating new one.")
 
     if convo is None:
         convo = Conversation(
             user_id=user_id,
-            title=f"Conversation on {conv_day_utc.isoformat()}",
-            conv_day=conv_day_utc,
+            title=f"Conversation on {today_local.isoformat()}",
+            conv_day=today_local,
             user_tz=zone.zone,
         )
         db.add(convo)
@@ -47,6 +54,6 @@ async def get_or_create_today_conversation(
     return {
         "id":        convo.id,
         "title":     convo.title,
-        "conv_day":  convo.conv_day,      # UTC DATE, e.g. 2025-05-18
+        "conv_day":  convo.conv_day,      # Local DATE, e.g. 2025-05-19
         "user_tz":   convo.user_tz,
     }
