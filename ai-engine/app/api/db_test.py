@@ -1,31 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.db.database import get_db
-from app.db.models import User, Conversation, Message
-from pydantic import BaseModel
+from app.db.models import Conversation, Message
 
 router = APIRouter()
 
-class UserCreate(BaseModel):
-    username: str
-    email: str
-
-@router.post("/users/", response_model=dict)
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    # Check if user already exists
-    db_user = db.query(User).filter(User.username == user.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    # Create new user
-    db_user = User(username=user.username, email=user.email)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    
-    return {"id": db_user.id, "username": db_user.username}
-
-@router.get("/users/", response_model=list)
-def get_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
-    return [{"id": user.id, "username": user.username} for user in users] 
+@router.get("/db-test")
+async def test_db_connection(db: Session = Depends(get_db)):
+    """
+    Simple endpoint to test database connectivity and table access.
+    """
+    try:
+        # Test if we can query conversations table
+        conversation_count = db.query(Conversation).count()
+        
+        # Test if we can query messages table
+        message_count = db.query(Message).count()
+        
+        return {
+            "status": "Database connection successful",
+            "conversation_count": conversation_count,
+            "message_count": message_count,
+        }
+    except Exception as e:
+        return {
+            "status": "Database connection failed",
+            "error": str(e)
+        } 

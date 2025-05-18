@@ -7,25 +7,18 @@ import uuid
 def generate_uuid():
     return str(uuid.uuid4())
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(String, primary_key=True, default=generate_uuid)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
-    
-    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
-
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, nullable=False)  # References auth.users.id
+    context_byte_id = Column(String, nullable=True)  # Optional reference to bytes
     title = Column(String(100), default="New Conversation")
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    date = Column(DateTime, nullable=True)  # For storing the conversation's date
+    timezone = Column(String, nullable=True)  # For storing the user's timezone
     
-    user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
     
     # Add index for faster querying by user_id
@@ -38,8 +31,10 @@ class Message(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     conversation_id = Column(String, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, nullable=True)  # Optional, can be null for system messages
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
+    meta_data = Column(Text, nullable=True)  # JSON for any additional data, renamed from 'metadata'
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     
     conversation = relationship("Conversation", back_populates="messages")

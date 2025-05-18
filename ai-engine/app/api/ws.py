@@ -1,7 +1,7 @@
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query, HTTPException
 from app.llm.openai_client import stream_chat_completion
 from app.db.database import get_db
-from app.db.models import User, Conversation, Message
+from app.db.models import Conversation, Message
 from sqlalchemy.orm import Session
 import json
 
@@ -27,7 +27,7 @@ async def websocket_endpoint(websocket: WebSocket):
 async def websocket_chat_endpoint(
     websocket: WebSocket, 
     conversation_id: str,
-    user_id: str = Query(..., description="User ID"),
+    user_id: str = Query(..., description="User ID from auth.users.id"),
 ):
     """
     WebSocket endpoint that:
@@ -44,14 +44,7 @@ async def websocket_chat_endpoint(
         # Initial validation
         db = next(get_db())
         
-        # Verify user exists
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            await websocket.send_text(json.dumps({
-                "error": "User not found"
-            }))
-            await websocket.close()
-            return
+        # No need to verify user exists in our database since we're using auth.users.id
         
         # Verify conversation exists and belongs to user
         conversation = db.query(Conversation).filter(
@@ -98,8 +91,10 @@ async def websocket_chat_endpoint(
                 # Save user message to database
                 user_message = Message(
                     conversation_id=conversation_id,
+                    user_id=user_id,  # Store the auth.users.id
                     role="user",
-                    content=message_text
+                    content=message_text,
+                    meta_data=json.dumps({"source": "user"})  # Use meta_data instead of metadata
                 )
                 db.add(user_message)
                 db.commit()
@@ -114,7 +109,8 @@ async def websocket_chat_endpoint(
                 ai_message = Message(
                     conversation_id=conversation_id,
                     role="assistant",
-                    content=""  # Will be updated as content streams
+                    content="",  # Will be updated as content streams
+                    meta_data=json.dumps({"source": "ai"})  # Use meta_data instead of metadata
                 )
                 db.add(ai_message)
                 db.commit()
