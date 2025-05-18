@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Message } from '@/lib/types';
+import { useAuth } from '@/features/auth/AuthContext';
+
+type UseChatProps = {
+  conversationId?: string | null;
+};
 
 type UseChatReturn = {
   messages: Message[];
@@ -8,27 +13,44 @@ type UseChatReturn = {
   sendMessage: (text: string) => void;
 };
 
-export function useChat(): UseChatReturn {
+export function useChat({ conversationId = "test" }: UseChatProps = {}): UseChatReturn {
+  const { session } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const currentMessageIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Connect to the WebSocket endpoint
-    const ws = new WebSocket('ws://localhost:8000/ws/echo');
+    // Only connect if we have a token (conversationId now has a default)
+    if (!session?.access_token) {
+      console.log(`WebSocket not connecting, missing access_token`);
+      return;
+    }
+
+    console.log(`WebSocket connecting to conversation: ${conversationId}`);
+    console.log(`With token present: ${!!session.access_token} (${session.access_token.substring(0, 10)}...)`);
+    
+    // Connect to the WebSocket endpoint with auth token
+    const wsUrl = conversationId === "test" 
+      ? `ws://localhost:8000/ws/chat?token=${session.access_token}`
+      : `ws://localhost:8000/ws/chat/${conversationId}?token=${session.access_token}`;
+    console.log(`WebSocket URL (without token): ${wsUrl.split('?')[0]}`);
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.log("WebSocket connection opened successfully");
       setIsConnected(true);
     };
     
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      console.error(`WebSocket connection closed with code: ${event.code}, reason: ${event.reason}`);
       setIsConnected(false);
       currentMessageIdRef.current = null;
     };
     
-    ws.onerror = () => {
+    ws.onerror = (error) => {
+      console.error("WebSocket connection error:", error);
       setIsConnected(false);
       currentMessageIdRef.current = null;
     };
@@ -67,7 +89,7 @@ export function useChat(): UseChatReturn {
     return () => {
       ws.close();
     };
-  }, []);
+  }, [conversationId, session?.access_token]);
 
   const sendMessage = (text: string) => {
     // Reset the current message ID so a new AI message will be created

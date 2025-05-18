@@ -7,3 +7,5 @@ openai==1.79.0
 sqlalchemy==2.0.41
 psycopg2-binary==2.9.10
 pytz==2025.2
+requests
+PyJWT[crypto]>=2.10.1

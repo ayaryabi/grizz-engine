@@ -1,148 +1,92 @@
-from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query, HTTPException
-from app.llm.openai_client import stream_chat_completion
-from app.db.database import get_db
-from app.db.models import Conversation, Message
-from sqlalchemy.orm import Session
-import json
+from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query, HTTPException, status, Path
+import logging
+import json # For sending simple JSON responses like errors
+from urllib.parse import parse_qs # Import to parse query parameters
 
+# Using an async function directly instead of Depends for WebSocket context
+from app.core.auth import get_current_user_id_from_token 
+from app.llm.openai_client import stream_chat_completion
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.websocket("/ws/echo")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_text()
-            # Build OpenAI messages format
-            messages = [
-                {"role": "user", "content": data}
-            ]
-            # Stream LLM response
-            async for chunk in stream_chat_completion(messages):
-                await websocket.send_text(chunk)
-    except WebSocketDisconnect:
-        pass 
+# Remove the old /ws/echo as it's not part of this focused step
+
+# Add a WebSocket endpoint that doesn't require a specific conversation ID
+@router.websocket("/ws/chat")
+async def websocket_default_chat_endpoint(websocket: WebSocket):
+    """Simplified WebSocket endpoint that uses 'test' as the default conversation ID."""
+    await websocket_chat_endpoint(websocket, "test")
 
 @router.websocket("/ws/chat/{conversation_id}")
 async def websocket_chat_endpoint(
     websocket: WebSocket, 
-    conversation_id: str,
-    user_id: str = Query(..., description="User ID from auth.users.id"),
+    conversation_id: str = Path(..., description="Conversation ID"),
 ):
     """
-    WebSocket endpoint that:
-    1. Accepts connection with conversation_id and user_id
-    2. Saves user messages to database
-    3. Streams AI responses and saves them to database
+    WebSocket endpoint that FOR THIS STEP:
+    1. Authenticates user via JWT token passed as a query parameter ('token').
+    2. Accepts the connection if authentication is successful.
+    3. Logs received messages and the authenticated user ID.
+    NO DATABASE INTERACTIONS IN THIS STEP.
     """
-    await websocket.accept()
-    
-    # Get DB session - we'll create a new session for each message
-    # to avoid keeping the session open for the entire WebSocket connection
-    
     try:
-        # Initial validation
-        db = next(get_db())
+        # Extract token from websocket query_string
+        query_string = websocket.scope.get("query_string", b"").decode()
+        query_params = parse_qs(query_string)
         
-        # No need to verify user exists in our database since we're using auth.users.id
+        # Get token from query parameters
+        token = query_params.get("token", [None])[0]
+        logger.debug(f"WebSocket token present: {bool(token)}")
         
-        # Verify conversation exists and belongs to user
-        conversation = db.query(Conversation).filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == user_id
-        ).first()
-        
-        if not conversation:
-            await websocket.send_text(json.dumps({
-                "error": "Conversation not found or access denied"
-            }))
-            await websocket.close()
+        if not token:
+            logger.warning("WebSocket connection rejected: Missing token")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        
-        # Get previous messages from this conversation (for context)
-        # In a real implementation, we might limit this or handle pagination
-        previous_messages = db.query(Message).filter(
-            Message.conversation_id == conversation_id
-        ).order_by(Message.created_at).all()
-        
-        # Convert to OpenAI message format
-        openai_messages = []
-        for msg in previous_messages:
-            openai_messages.append({
-                "role": msg.role,
-                "content": msg.content
-            })
-        
-        db.close()  # Close initial validation session
-        
-        # Main message loop
-        while True:
-            # Wait for a message from the client
-            data = await websocket.receive_text()
             
+        # Manually authenticate using our token function
+        try:
+            authed_user_id = await get_current_user_id_from_token(token)
+        except HTTPException as auth_exc:
+            logger.warning(f"WebSocket authentication failed: {auth_exc.detail}")
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+            
+        # Authentication successful - accept the connection
+        await websocket.accept()
+        logger.info(f"WebSocket connection accepted for authed_user_id: {authed_user_id} to conversation_id: {conversation_id}")
+
+        # For this step, we are not checking conversation ownership against the DB.
+        # We are only verifying the token and getting the user_id.
+
+        while True:
+            data = await websocket.receive_text()
+            logger.info(f"Received message from authed_user_id: {authed_user_id} for conversation_id: {conversation_id}: {data}")
+            
+            # Simple LLM call with the message - no history
             try:
-                # Parse message data
-                message_data = json.loads(data)
-                message_text = message_data.get("message", "")
-                
-                # Create a new DB session for this message
-                db = next(get_db())
-                
-                # Save user message to database
-                user_message = Message(
-                    conversation_id=conversation_id,
-                    user_id=user_id,  # Store the auth.users.id
-                    role="user",
-                    content=message_text,
-                    meta_data=json.dumps({"source": "user"})  # Use meta_data instead of metadata
-                )
-                db.add(user_message)
-                db.commit()
-                
-                # Add to context for OpenAI
-                openai_messages.append({
-                    "role": "user",
-                    "content": message_text
-                })
-                
-                # Create AI message in database (we'll update content as it streams)
-                ai_message = Message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content="",  # Will be updated as content streams
-                    meta_data=json.dumps({"source": "ai"})  # Use meta_data instead of metadata
-                )
-                db.add(ai_message)
-                db.commit()
-                db.refresh(ai_message)
-                
-                # Stream completion from OpenAI
-                full_response = ""
-                async for chunk in stream_chat_completion(openai_messages):
-                    full_response += chunk
+                logger.info(f"Calling LLM with message: {data}")
+                async for chunk in stream_chat_completion([
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": data}
+                ]):
                     await websocket.send_text(chunk)
-                
-                # Update the AI message with the complete response
-                ai_message.content = full_response
-                db.commit()
-                
-                # Add to context for next messages
-                openai_messages.append({
-                    "role": "assistant",
-                    "content": full_response
-                })
-                
-                # Close this message's DB session
-                db.close()
-                
-            except json.JSONDecodeError:
-                await websocket.send_text("Error: Invalid JSON message format")
             except Exception as e:
-                await websocket.send_text(f"Error: {str(e)}")
-                if 'db' in locals() and db is not None:
-                    db.close()
-                
+                logger.error(f"Error in LLM call: {e}")
+                await websocket.send_text("Error processing your request")
+
     except WebSocketDisconnect:
-        # Clean up on disconnect
-        if 'db' in locals() and db is not None:
-            db.close() 
+        logger.info(f"WebSocket disconnected for conversation_id: {conversation_id}")
+    except Exception as e:
+        logger.error(f"Error in WebSocket for conversation_id: {conversation_id}: {e}", exc_info=True)
+        # Ensure graceful closure if possible, though WebSocket might already be gone
+        if websocket.client_state != WebSocketState.DISCONNECTED:
+            try:
+                await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            except RuntimeError: 
+                pass # Catch if sending close is not possible
+    finally:
+        logger.info(f"WebSocket for conversation_id: {conversation_id} - cleanup complete.")
+
+# Need to import WebSocketState for the final finally block if it's not auto-imported with WebSocket
+from starlette.websockets import WebSocketState 

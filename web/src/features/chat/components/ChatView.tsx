@@ -9,8 +9,13 @@ import { useChat } from '@/lib/hooks/useChat';
 // import MessageList from './MessageList';
 // import ChatInput from './ChatInput';
 
-export default function ChatView() {
-  const { messages, isConnected, sendMessage } = useChat();
+interface ChatViewProps {
+  conversationId?: string; // Make conversationId optional
+}
+
+export default function ChatView({ conversationId }: ChatViewProps) {
+  // If conversationId is provided, use it, otherwise let useChat use its default "test"
+  const { messages, isConnected, sendMessage } = useChat(conversationId ? { conversationId } : {});
 
   return (
     // Main container for the chat interface: full width to push scrollbar to edge
