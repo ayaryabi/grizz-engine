@@ -35,7 +35,7 @@ class Message(Base):
     user_id = Column(String, nullable=True)  # Optional, can be null for system messages
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
-    meta_data = Column(Text, nullable=True)  # JSON for any additional data, renamed from 'metadata'
+    message_metadata = Column("metadata", Text, nullable=True)  # JSON for any additional data
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     
     conversation = relationship("Conversation", back_populates="messages")

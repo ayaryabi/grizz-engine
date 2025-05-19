@@ -15,7 +15,7 @@ client = AsyncOpenAI(api_key=api_key)
 
 async def stream_chat_completion(messages: list[dict]) -> AsyncGenerator[str, None]:
     response = await client.chat.completions.create(
-        model="gpt-4.1-nano-2025-04-14",
+        model="gpt-4.1-2025-04-14",
         messages=messages,
         stream=True,
     )
