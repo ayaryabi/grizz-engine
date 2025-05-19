@@ -4,6 +4,8 @@ from app.llm.openai_client import stream_chat_completion
 import logging
 import asyncio
 from typing import Callable, Any
+from fastapi import HTTPException, status
+from app.db.database import run_database_operation
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -30,22 +32,38 @@ async def handle_chat_message(user_id, conversation_id, user_message, db: Sessio
     Main chat pipeline: save user message, fetch context, build prompt, call LLM, save AI response, stream to UI.
     """
     try:
-        # 1. Save user message
-        user_msg = Message(
-            conversation_id=conversation_id,
-            user_id=user_id,
-            role="user",
-            content=user_message,
-        )
-        db.add(user_msg)
-        db.commit()
-        db.refresh(user_msg)
-        
-        logger.info(f"Saved user message for conversation: {conversation_id}, user: {user_id}")
+        # 1. Save user message using thread pool with timeout protection
+        try:
+            def save_user_msg():
+                user_msg = Message(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    role="user",
+                    content=user_message,
+                )
+                db.add(user_msg)
+                db.commit()
+                db.refresh(user_msg)
+                return user_msg
 
-        # 2. Fetch context
-        context = fetch_recent_messages(conversation_id, db)
-        logger.info(f"Fetched {len(context)} context messages")
+            await run_database_operation(save_user_msg, timeout=3.0)
+            logger.info(f"Saved user message for conversation: {conversation_id}, user: {user_id}")
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout saving user message for conversation: {conversation_id}")
+            await stream_callback("\n\n[Error: The system is experiencing high load. Please try again in a moment.]")
+            return
+        
+        # 2. Fetch context with timeout protection
+        try:
+            def get_context():
+                return fetch_recent_messages(conversation_id, db)
+
+            context = await run_database_operation(get_context, timeout=3.0)
+            logger.info(f"Fetched {len(context)} context messages")
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout fetching context for conversation: {conversation_id}")
+            await stream_callback("\n\n[Error: The system is experiencing high load. Please try again in a moment.]")
+            return
 
         # 3. Build prompt
         prompt = build_prompt(context, user_message)
@@ -77,16 +95,23 @@ async def handle_chat_message(user_id, conversation_id, user_message, db: Sessio
         # 5. Save AI response only if we got something
         if ai_content:
             try:
-                ai_msg = Message(
-                    conversation_id=conversation_id,
-                    user_id=user_id,
-                    role="assistant",
-                    content=ai_content,
-                )
-                db.add(ai_msg)
-                db.commit()
-                db.refresh(ai_msg)
+                def save_ai_msg():
+                    ai_msg = Message(
+                        conversation_id=conversation_id,
+                        user_id=user_id,
+                        role="assistant",
+                        content=ai_content,
+                    )
+                    db.add(ai_msg)
+                    db.commit()
+                    db.refresh(ai_msg)
+                    return ai_msg
+                
+                await run_database_operation(save_ai_msg, timeout=3.0)
                 logger.info(f"Saved AI response ({len(ai_content)} chars) to database")
+            except asyncio.TimeoutError:
+                logger.error("Timeout saving AI response to database")
+                # Don't send error to client since they already got the AI response
             except Exception as db_error:
                 logger.error(f"Failed to save AI response: {str(db_error)}")
         else:

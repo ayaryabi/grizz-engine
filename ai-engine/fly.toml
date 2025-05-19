@@ -18,8 +18,8 @@ primary_region = 'fra'
 
   # Optimized health check settings
   [[http_service.checks]]
-    grace_period = "60s"        # Allow longer startup time
-    interval = "30s"            # Check less frequently
+    grace_period = "30s"        # Allow longer startup time
+    interval = "10s"            # Check every 10 seconds
     method = "GET"
     path = "/health"            # Use dedicated health endpoint
     protocol = "http"

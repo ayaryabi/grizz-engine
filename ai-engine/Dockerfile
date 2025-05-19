@@ -18,5 +18,5 @@ COPY . .
 ENV HOST="0.0.0.0"
 ENV PORT="8000"
 
-# Run directly with uvicorn
-CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run directly with uvicorn with correct module path
+CMD ["/app/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
