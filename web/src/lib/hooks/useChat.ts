@@ -73,6 +73,14 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   }, [session?.access_token, propConversationId]);
 
   useEffect(() => {
+    // Debug logging for session state
+    console.log('useChat debug:', {
+      hasSession: !!session,
+      hasAccessToken: !!session?.access_token,
+      conversationId,
+      sessionState: session
+    });
+
     // Only connect if we have both a conversation ID and a token
     if (!conversationId || !session?.access_token) {
       console.log(`WebSocket not connecting, missing ${!conversationId ? 'conversationId' : 'access_token'}`);
@@ -84,10 +92,28 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     
     // Connect to the WebSocket endpoint with auth token
     const wsHost = process.env.NEXT_PUBLIC_FASTAPI_BACKEND_WS_URL || process.env.NEXT_PUBLIC_FASTAPI_BACKEND_URL || 'localhost:8000';
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsHostClean = wsHost.replace(/^https?:\/\//, '');
-    const wsUrl = `${wsProtocol}://${wsHostClean}/ws/chat/${conversationId}?token=${session.access_token}`;
-    console.log(`WebSocket URL: ${wsUrl}`);
+    console.log('WebSocket host from env:', wsHost);
+    
+    // Determine protocol based on the host and current window location
+    let wsUrl: string;
+    
+    // If the host already includes a protocol (ws:// or wss://), use it directly
+    if (wsHost.startsWith('ws://') || wsHost.startsWith('wss://')) {
+      console.log('Using protocol from environment variable');
+      // Remove any trailing slash if present
+      const cleanHost = wsHost.endsWith('/') ? wsHost.slice(0, -1) : wsHost;
+      wsUrl = `${cleanHost}/ws/chat/${conversationId}?token=${encodeURIComponent(session.access_token)}`;
+    } else {
+      // Otherwise, determine protocol based on current page
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      console.log('WebSocket protocol based on current location:', wsProtocol);
+      wsUrl = `${wsProtocol}://${wsHost}/ws/chat/${conversationId}?token=${encodeURIComponent(session.access_token)}`;
+    }
+    
+    console.log(`Complete WebSocket URL (token redacted): ${wsUrl.replace(session.access_token, 'TOKEN_REDACTED')}`);
+    
+    // Create the WebSocket connection
+    console.log('Attempting to create WebSocket connection...');
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -109,6 +135,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     };
     
     ws.onmessage = (event) => {
+      console.log("WebSocket message received:", event.data.substring(0, 50) + "...");
       // Append to current AI message or create a new one
       if (!currentMessageIdRef.current) {
         // Start a new AI message
@@ -140,6 +167,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
 
     // Cleanup: close the WebSocket connection when the component unmounts
     return () => {
+      console.log("Closing WebSocket connection due to component cleanup");
       ws.close();
     };
   }, [conversationId, session?.access_token, session]);
@@ -159,7 +187,10 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
 
     // Send to backend via WebSocket
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log("Sending message via WebSocket:", text.substring(0, 50) + "...");
       wsRef.current.send(text);
+    } else {
+      console.error("Cannot send message - WebSocket not connected. State:", wsRef.current?.readyState);
     }
   };
 

@@ -7,6 +7,7 @@ from app.api.conversation import router as conversation_router
 from app.core.config import get_settings
 from app.db.database import engine
 from app.db import models
+import uvicorn
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -21,7 +22,11 @@ app = FastAPI(
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Next.js frontend URL
+    allow_origins=[
+        "http://localhost:3000",  # Next.js frontend URL (development)
+        "https://grizz.so",       # Production frontend
+        "*",                      # Allow all origins temporarily for debugging
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

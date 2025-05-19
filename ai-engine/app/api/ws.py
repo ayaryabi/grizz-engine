@@ -23,25 +23,43 @@ async def websocket_chat_endpoint(
 ):
     db = next(get_db())
     try:
-        # Extract token from websocket query_string
+        # Log connection attempt details
+        logger.info(f"WebSocket connection attempt - Headers: {websocket.headers}")
+        logger.info(f"WebSocket connection attempt - Client: {websocket.client}")
+        
+        # More detailed query string logging
         query_string = websocket.scope.get("query_string", b"").decode()
+        logger.info(f"WebSocket connection attempt - Query string raw: {query_string}")
+        
+        # Extract token from websocket query_string
         query_params = parse_qs(query_string)
+        logger.info(f"WebSocket connection attempt - Parsed query params: {query_params}")
+        
         token = query_params.get("token", [None])[0]
-        logger.debug(f"WebSocket token present: {bool(token)}")
+        logger.info(f"WebSocket token present: {bool(token)}")
+        
         if not token:
             logger.warning("WebSocket connection rejected: Missing token")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+
         try:
             authed_user_id = validate_jwt_token(token)
+            logger.info(f"Token validation successful for user: {authed_user_id}")
         except HTTPException as auth_exc:
-            logger.warning(f"WebSocket authentication failed: {auth_exc.detail}")
+            logger.error(f"WebSocket authentication failed: {auth_exc.detail}")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
+
+        logger.info("Attempting to accept WebSocket connection...")
         await websocket.accept()
         logger.info(f"WebSocket connection accepted for authed_user_id: {authed_user_id} to conversation_id: {conversation_id}")
+
         while True:
+            logger.debug("Waiting for message...")
             data = await websocket.receive_text()
+            logger.info(f"Received message from user {authed_user_id}: {data[:100]}...")  # Log first 100 chars
+            
             await handle_chat_message(
                 user_id=authed_user_id,
                 conversation_id=conversation_id,
@@ -50,13 +68,14 @@ async def websocket_chat_endpoint(
                 stream_callback=websocket.send_text
             )
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected for conversation_id: {conversation_id}")
+        logger.warning(f"WebSocket disconnected for conversation_id: {conversation_id}")
     except Exception as e:
-        logger.error(f"Error in WebSocket for conversation_id: {conversation_id}: {e}", exc_info=True)
+        logger.error(f"Error in WebSocket for conversation_id: {conversation_id}: {str(e)}", exc_info=True)
         if websocket.client_state != WebSocketState.DISCONNECTED:
             try:
                 await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
-            except RuntimeError: 
+            except RuntimeError as re: 
+                logger.error(f"Error closing websocket: {str(re)}")
                 pass
     finally:
         logger.info(f"WebSocket for conversation_id: {conversation_id} - cleanup complete.") 
