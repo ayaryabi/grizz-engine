@@ -30,7 +30,7 @@ export default function ChatPage() {
           <p className="mt-4">Chat interface will go here...</p>
         </div>
       ) : (
-        <p>You should not see this message - if you do, there's an auth problem.</p>
+        <p>You should not see this message - if you do, there&apos;s an auth problem.</p>
       )}
     </div>
   );

@@ -39,10 +39,9 @@ export function MagicLinkForm() {
       setMessage('Check your email for the magic link!');
       setEmail(''); // Clear input on success
 
-    } catch (error: any) {
-      console.error("Error sending magic link:", error);
-      setErrorMsg(error.error_description || error.message || 'An unexpected error occurred.');
-    } finally {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send magic link';
+      setErrorMsg(errorMessage);
       setLoading(false);
     }
   };

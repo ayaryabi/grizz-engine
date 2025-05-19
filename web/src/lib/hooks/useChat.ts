@@ -139,7 +139,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     return () => {
       ws.close();
     };
-  }, [conversationId, session?.access_token]);
+  }, [conversationId, session?.access_token, session]);
 
   const sendMessage = (text: string) => {
     // Reset the current message ID so a new AI message will be created

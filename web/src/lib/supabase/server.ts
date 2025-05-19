@@ -17,14 +17,14 @@ export function createSupabaseServerClient(cookieStore: ReadonlyRequestCookies) 
           // We can often ignore this if middleware handles session refresh
           try {
              cookieStore.set({ name, value, ...options })
-          } catch (error) { }
+          } catch { }
         },
         remove(name: string, options: CookieOptions) {
            // Server Components might try to remove cookies, which triggers an error
            // We can often ignore this if middleware handles session refresh
           try {
              cookieStore.set({ name, value: '', ...options })
-          } catch (error) { }
+          } catch { }
         },
       },
     }

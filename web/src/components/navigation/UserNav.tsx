@@ -21,7 +21,7 @@ import {
   DropdownMenuPortal
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { LogOut, User as UserIcon, Sun, Moon, Laptop } from "lucide-react"; // Added Sun, Moon, Laptop icons
+import { LogOut, Sun, Moon, Laptop } from "lucide-react"; // Removed unused UserIcon
 
 export function UserNav() {
   const { user, profile, signOut, loading } = useAuth();

@@ -77,20 +77,20 @@ export async function POST(request: Request) {
         },
       });
       console.log('FastAPI response status:', fastApiResponse.status);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Error making request to FastAPI:', e);
       return NextResponse.json({ 
         error: 'Failed to connect to backend service', 
-        details: e.message 
+        details: e instanceof Error ? e.message : String(e) 
       }, { status: 502 });
     }
 
     if (!fastApiResponse.ok) {
-      let errorBody = 'Unknown error';
+      let errorBody: unknown;
       try {
         errorBody = await fastApiResponse.text();
         console.error('FastAPI error response body:', errorBody);
-      } catch (e) {
+      } catch (e: unknown) {
         console.error('Could not read FastAPI error response body:', e);
       }
       console.error(`FastAPI error: ${fastApiResponse.status}`, errorBody);
@@ -104,22 +104,22 @@ export async function POST(request: Request) {
     try {
       conversationData = await fastApiResponse.json();
       console.log('FastAPI conversation data:', conversationData);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Error parsing FastAPI response:', e);
       return NextResponse.json({ 
         error: 'Invalid response from backend', 
-        details: e.message 
+        details: e instanceof Error ? e.message : String(e) 
       }, { status: 500 });
     }
     
     return NextResponse.json(conversationData);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Unhandled error in /api/chat/today:', error);
     return NextResponse.json({ 
       error: 'Internal Server Error', 
-      details: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      details: error instanceof Error ? error.message : String(error),
+      stack: process.env.NODE_ENV === 'development' ? error instanceof Error ? error.stack : String(error) : undefined
     }, { status: 500 });
   }
 } 

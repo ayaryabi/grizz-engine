@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   // Create an initial response object
-  let response = NextResponse.next({
+  const response = NextResponse.next({
     request: {
       headers: request.headers,
     },
@@ -47,9 +47,7 @@ export async function middleware(request: NextRequest) {
   if (session) console.log(`User ID: ${session.user.id}`)
 
   const { pathname } = request.nextUrl;
-  const protectedRoutes = ['/dashboard', '/chat', '/settings', '/document', '/bytes']; 
   const authRoute = '/auth';
-  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
 
   // NEW APPROACH: Only redirect from auth page when we know user is logged in
   // For protected routes, we'll let client-side auth handle the redirect to login
