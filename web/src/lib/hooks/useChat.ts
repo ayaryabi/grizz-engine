@@ -83,8 +83,11 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     console.log(`With token present: ${!!session.access_token} (${session.access_token.substring(0, 10)}...)`);
     
     // Connect to the WebSocket endpoint with auth token
-    const wsUrl = `ws://localhost:8000/ws/chat/${conversationId}?token=${session.access_token}`;
-    console.log(`WebSocket URL (without token): ${wsUrl.split('?')[0]}`);
+    const wsHost = process.env.NEXT_PUBLIC_FASTAPI_BACKEND_WS_URL || process.env.NEXT_PUBLIC_FASTAPI_BACKEND_URL || 'localhost:8000';
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsHostClean = wsHost.replace(/^https?:\/\//, '');
+    const wsUrl = `${wsProtocol}://${wsHostClean}/ws/chat/${conversationId}?token=${session.access_token}`;
+    console.log(`WebSocket URL: ${wsUrl}`);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
