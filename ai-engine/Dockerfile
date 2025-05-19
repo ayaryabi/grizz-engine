@@ -8,8 +8,15 @@ WORKDIR /app
 RUN python -m venv .venv
 COPY requirements.txt ./
 RUN .venv/bin/pip install -r requirements.txt
+
 FROM python:3.13.3-slim
 WORKDIR /app
 COPY --from=builder /app/.venv .venv/
 COPY . .
+
+# Set environment variables for proper binding
+ENV HOST="0.0.0.0"
+ENV PORT="8000"
+
+# Run directly with uvicorn
 CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

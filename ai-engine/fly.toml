@@ -16,15 +16,15 @@ primary_region = 'fra'
   min_machines_running = 1
   processes = ['app']
 
-  # Health check - use a simple endpoint that doesn't require auth
+  # Optimized health check settings
   [[http_service.checks]]
-    grace_period = "30s"
-    interval = "15s"
+    grace_period = "60s"        # Allow longer startup time
+    interval = "30s"            # Check less frequently
     method = "GET"
-    path = "/"
+    path = "/health"            # Use dedicated health endpoint
     protocol = "http"
-    restart_limit = 0
-    timeout = "10s"
+    restart_limit = 3           # Allow 3 failures before restart
+    timeout = "5s"              # Shorter timeout for health checks
     tls_skip_verify = false
 
 [[vm]]

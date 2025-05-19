@@ -1,6 +1,12 @@
 from app.db.models import Message
 from sqlalchemy.orm import Session
 from app.llm.openai_client import stream_chat_completion
+import logging
+import asyncio
+from typing import Callable, Any
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Placeholder imports for memory_service and chat_agent
 try:
@@ -19,40 +25,77 @@ except ImportError:
         prompt.append({"role": "user", "content": user_message})
         return prompt
 
-async def handle_chat_message(user_id, conversation_id, user_message, db: Session, stream_callback):
+async def handle_chat_message(user_id, conversation_id, user_message, db: Session, stream_callback: Callable[[str], Any]):
     """
     Main chat pipeline: save user message, fetch context, build prompt, call LLM, save AI response, stream to UI.
     """
-    # 1. Save user message
-    user_msg = Message(
-        conversation_id=conversation_id,
-        user_id=user_id,
-        role="user",
-        content=user_message,
-    )
-    db.add(user_msg)
-    db.commit()
-    db.refresh(user_msg)
+    try:
+        # 1. Save user message
+        user_msg = Message(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            role="user",
+            content=user_message,
+        )
+        db.add(user_msg)
+        db.commit()
+        db.refresh(user_msg)
+        
+        logger.info(f"Saved user message for conversation: {conversation_id}, user: {user_id}")
 
-    # 2. Fetch context
-    context = fetch_recent_messages(conversation_id, db)
+        # 2. Fetch context
+        context = fetch_recent_messages(conversation_id, db)
+        logger.info(f"Fetched {len(context)} context messages")
 
-    # 3. Build prompt
-    prompt = build_prompt(context, user_message)
+        # 3. Build prompt
+        prompt = build_prompt(context, user_message)
+        logger.info("Built prompt for AI completion")
 
-    # 4. Call LLM and stream response
-    ai_content = ""
-    async for chunk in stream_chat_completion(prompt):
-        ai_content += chunk
-        await stream_callback(chunk)  # Stream to WebSocket
+        # 4. Call LLM and stream response with proper timeout handling
+        ai_content = ""
+        try:
+            async for chunk in stream_chat_completion(prompt):
+                ai_content += chunk
+                try:
+                    # Don't block if the client disconnects
+                    await asyncio.wait_for(stream_callback(chunk), timeout=2.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Client callback timed out, client may have disconnected")
+                    break
+                except Exception as e:
+                    logger.error(f"Error sending chunk to client: {str(e)}")
+                    break
+        except Exception as llm_error:
+            logger.error(f"Error during LLM streaming: {str(llm_error)}")
+            error_message = "\n\n[Error: Unable to get a complete response from AI service]"
+            ai_content += error_message
+            try:
+                await stream_callback(error_message)
+            except:
+                pass
 
-    # 5. Save AI response
-    ai_msg = Message(
-        conversation_id=conversation_id,
-        user_id=user_id,
-        role="assistant",
-        content=ai_content,
-    )
-    db.add(ai_msg)
-    db.commit()
-    db.refresh(ai_msg) 
+        # 5. Save AI response only if we got something
+        if ai_content:
+            try:
+                ai_msg = Message(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    role="assistant",
+                    content=ai_content,
+                )
+                db.add(ai_msg)
+                db.commit()
+                db.refresh(ai_msg)
+                logger.info(f"Saved AI response ({len(ai_content)} chars) to database")
+            except Exception as db_error:
+                logger.error(f"Failed to save AI response: {str(db_error)}")
+        else:
+            logger.warning("No AI content was generated, skipping database save")
+    
+    except Exception as e:
+        logger.error(f"Unhandled error in chat pipeline: {str(e)}", exc_info=True)
+        try:
+            error_msg = f"\n\n[System Error: {str(e)}]"
+            await stream_callback(error_msg)
+        except:
+            pass 
