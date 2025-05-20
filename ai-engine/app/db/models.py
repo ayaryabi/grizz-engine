@@ -12,8 +12,8 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id = Column(UUID, primary_key=True, default=generate_uuid)
-    user_id = Column(String, nullable=False)  # References auth.users.id
-    context_byte_id = Column(String, nullable=True)  # Optional reference to bytes
+    user_id = Column(UUID, nullable=False)  # Changed to UUID to match database schema
+    context_byte_id = Column(UUID, nullable=True)  # Changed to UUID to match database schema
     title = Column(String(100), default="New Conversation")
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -33,7 +33,7 @@ class Message(Base):
 
     id = Column(UUID, primary_key=True, default=generate_uuid)
     conversation_id = Column(UUID, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(String, nullable=True)  # Optional, can be null for system messages
+    user_id = Column(UUID, nullable=True)  # Changed to UUID to match database schema
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
     message_metadata = Column("metadata", Text, nullable=True)  # JSON for any additional data

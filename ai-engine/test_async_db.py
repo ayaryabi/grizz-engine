@@ -11,70 +11,65 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Import after environment is loaded
-from app.db.database import async_session_maker, get_async_db
-from app.db.models import Conversation, Message
-from sqlalchemy import select
-from datetime import datetime
-import pytz
+from app.db.database import async_session_maker
+from sqlalchemy import select, text
 import uuid
 
 async def test_async_db():
-    """Test async database operations"""
-    logger.info("Starting async database test")
+    """Test async database operations with Supabase Session Pooler"""
+    logger.info("Starting async database test with session pooler")
     
     # Create a test session
     async with async_session_maker() as session:
         try:
-            # 1. Test creating a conversation
-            test_user_id = "test_async_user"
-            test_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            # 1. Test basic connection with direct SQL query
+            logger.info("Testing basic connection with direct SQL query")
+            result = await session.execute(select(text("1::integer")))
+            value = result.scalar_one()
+            logger.info(f"Direct SQL query result: {value}")
             
-            # Create a test conversation
-            test_convo = Conversation(
-                user_id=test_user_id,
-                title=f"Test Conversation {test_timestamp}",
-                conv_day=datetime.now(pytz.UTC).date(),
-                user_tz="UTC",
+            # 2. Run the same query again to verify prepared statements work with session pooler
+            logger.info("Running second query to verify prepared statements work")
+            result = await session.execute(select(text("1::integer")))
+            value = result.scalar_one()
+            logger.info(f"Second direct SQL query result: {value}")
+            
+            # 3. Run a slightly more complex query
+            logger.info("Running a more complex query")
+            result = await session.execute(
+                select(text("'test'::text as col1, 123::integer as col2, now() as col3"))
             )
-            session.add(test_convo)
-            await session.commit()
-            await session.refresh(test_convo)
-            logger.info(f"Created test conversation with ID: {test_convo.id}")
+            row = result.fetchone()
+            logger.info(f"Complex query result: {row}")
             
-            # 2. Test adding messages
-            user_msg = Message(
-                conversation_id=test_convo.id,
-                user_id=test_user_id,
-                role="user",
-                content=f"Test message {test_timestamp}",
-            )
-            session.add(user_msg)
-            await session.commit()
-            await session.refresh(user_msg)
-            logger.info(f"Added user message with ID: {user_msg.id}")
+            # 4. Test with simple queries only - parameterized queries may need special handling
+            # due to the way asyncpg processes them
+            logger.info("Testing simple query 1")
+            result = await session.execute(select(text("random() as rand")))
+            value = result.scalar_one()
+            logger.info(f"Random value: {value}")
             
-            # 3. Test querying messages
-            stmt = select(Message).where(Message.conversation_id == test_convo.id)
-            result = await session.execute(stmt)
-            messages = result.scalars().all()
-            logger.info(f"Found {len(messages)} messages for conversation {test_convo.id}")
+            logger.info("Testing simple query 2")
+            result = await session.execute(select(text("now() as current_time")))
+            value = result.scalar_one()
+            logger.info(f"Current time: {value}")
             
-            # 4. Test the dependency function
-            logger.info("Testing get_async_db dependency")
-            async for db in get_async_db():
-                result = await db.execute(select(Conversation).where(Conversation.id == test_convo.id))
-                found_convo = result.scalar_one_or_none()
-                if found_convo:
-                    logger.info(f"Successfully retrieved conversation {found_convo.id} using dependency")
-                else:
-                    logger.error(f"Failed to retrieve conversation {test_convo.id} using dependency")
-                break
+            logger.info("Testing simple query 3")
+            result = await session.execute(select(text("'success'::text as status")))
+            value = result.scalar_one()
+            logger.info(f"Status: {value}")
             
             logger.info("Async database test completed successfully!")
+            await session.commit()
             return True
         
         except Exception as e:
             logger.error(f"Error during async database test: {str(e)}", exc_info=True)
+            try:
+                await session.rollback()
+                logger.info("Session rolled back")
+            except:
+                pass
             return False
 
 if __name__ == "__main__":

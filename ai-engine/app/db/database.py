@@ -4,6 +4,7 @@ import logging
 from app.core.config import get_settings
 import re
 import os
+from sqlalchemy import event
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -16,7 +17,7 @@ SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
 
 # Convert SQLAlchemy URL to asyncpg format if needed
 if SQLALCHEMY_DATABASE_URL.startswith("postgresql:"):
-    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql:", "postgresql+asyncpg:")
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
     logger.info("Converted database URL to use asyncpg")
 
 # Log connection details safely (without password)
@@ -29,20 +30,21 @@ logger.info(f"Database URL: {safe_url}")
 
 # Handle different database types
 connect_args = {}
+
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite:"):
     logger.info("Using SQLite database")
-    connect_args = {"check_same_thread": False}
-    # Note: SQLite doesn't have an async driver, consider using aiosqlite if needed
+    connect_args.update({"check_same_thread": False})
 elif SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg:"):
     logger.info("Using PostgreSQL with asyncpg")
-    # For Supabase Pooler, we need SSL
-    if "pooler.supabase.com" in SQLALCHEMY_DATABASE_URL:
-        connect_args = {
-            "ssl": "require",
-            "prepared_statement_cache_size": 0  # Disable prepared statements for pgbouncer compatibility
+    # SSL is still needed for Supabase
+    connect_args.update({
+        "ssl": "require",
+        "server_settings": {
+            "application_name": "grizz_app"
         }
-        logger.info(f"Using Supabase connection pooler with SSL mode: {connect_args.get('ssl')}")
-        logger.info("Disabled prepared statements for pgbouncer compatibility")
+    })
+    logger.info("Using Supabase session pooler with SSL mode: require")
+    # Prepared statements are fine with session pooler mode
 
 logger.info(f"Connecting to database with URL: {safe_url}")
 
@@ -50,9 +52,11 @@ logger.info(f"Connecting to database with URL: {safe_url}")
 engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True,      # Verify connections before using them
+    pool_pre_ping=True,      # Safe to use with session mode
     pool_recycle=180,        # Drop idle connections after 3 minutes
-    echo=True,               # Log SQL queries (remove in production)
+    pool_size=10,            # Can use larger pool with session mode
+    max_overflow=5,          # Allow some overflow for peak loads
+    echo=True,               # Log SQL queries (set to False in production)
 )
 
 # Create async session factory
