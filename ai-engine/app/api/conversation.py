@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, time
 import pytz
 
-from app.db.database import get_db
+from app.db.database import get_async_db
 from app.db.models import Conversation
 from app.core.auth import get_current_user_id_from_token
 
@@ -13,7 +13,7 @@ router = APIRouter()
 async def get_or_create_today_conversation(
     tz: str = Query("UTC", description="IANA timezone, e.g. Europe/Berlin"),
     user_id: str = Depends(get_current_user_id_from_token),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     # 1) Resolve timezone safely
     try:
@@ -29,12 +29,12 @@ async def get_or_create_today_conversation(
     print(f"today_local: {today_local}")
     print(f"Querying for user_id={user_id}, conv_day={today_local}")
 
-    # 3) Lookup or create using local date
-    convo = (
+    # 3) Lookup or create using local date with async SQLAlchemy
+    result = await db.execute(
         db.query(Conversation)
         .filter_by(user_id=user_id, conv_day=today_local)
-        .first()
     )
+    convo = result.scalar_one_or_none()
 
     if convo:
         print(f"Found conversation: {convo.id}, conv_day={convo.conv_day}")
@@ -49,8 +49,8 @@ async def get_or_create_today_conversation(
             user_tz=zone.zone,
         )
         db.add(convo)
-        db.commit()
-        db.refresh(convo)
+        await db.commit()
+        await db.refresh(convo)
 
     return {
         "id":        convo.id,

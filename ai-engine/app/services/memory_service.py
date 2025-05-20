@@ -1,26 +1,23 @@
 from app.db.models import Message
-from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text, select
 import logging
 
 logger = logging.getLogger(__name__)
 
-def fetch_recent_messages(conversation_id: str, db: Session, limit: int = 10):
+async def fetch_recent_messages(conversation_id: str, db: AsyncSession, limit: int = 10):
     """
     Fetch the last N messages for a conversation, ordered chronologically.
-    Uses direct SQL for improved performance over ORM.
+    Uses SQLAlchemy Core for improved performance over ORM with async support.
     """
     try:
-        # Direct SQL query for better performance
-        result = db.execute(
-            text("""
-                SELECT id, conversation_id, user_id, role, content, created_at 
-                FROM messages 
-                WHERE conversation_id = :conv_id
-                ORDER BY created_at DESC 
-                LIMIT :limit
-            """),
-            {"conv_id": conversation_id, "limit": limit}
+        # Async SQL execution with SQLAlchemy Core
+        result = await db.execute(
+            select(Message.id, Message.conversation_id, Message.user_id, 
+                   Message.role, Message.content, Message.created_at)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc())
+            .limit(limit)
         )
         
         # Convert to list of dict
@@ -33,7 +30,7 @@ def fetch_recent_messages(conversation_id: str, db: Session, limit: int = 10):
                 "content": row.content,
                 "created_at": row.created_at
             }
-            for row in result
+            for row in result.all()
         ]
         
         # Return in chronological order

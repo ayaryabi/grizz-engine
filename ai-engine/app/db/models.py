@@ -1,16 +1,17 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Date, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
 from .database import Base
 import uuid
 
 def generate_uuid():
-    return str(uuid.uuid4())
+    return uuid.uuid4()
 
 class Conversation(Base):
     __tablename__ = "conversations"
 
-    id = Column(String, primary_key=True, default=generate_uuid)
+    id = Column(UUID, primary_key=True, default=generate_uuid)
     user_id = Column(String, nullable=False)  # References auth.users.id
     context_byte_id = Column(String, nullable=True)  # Optional reference to bytes
     title = Column(String(100), default="New Conversation")
@@ -30,8 +31,8 @@ class Conversation(Base):
 class Message(Base):
     __tablename__ = "messages"
 
-    id = Column(String, primary_key=True, default=generate_uuid)
-    conversation_id = Column(String, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID, primary_key=True, default=generate_uuid)
+    conversation_id = Column(UUID, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, nullable=True)  # Optional, can be null for system messages
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)

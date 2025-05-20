@@ -10,3 +10,5 @@ sqlalchemy[asyncio]==2.0.41
 pytz==2025.2
 requests
 PyJWT[crypto]>=2.10.1
+redis==6.1.0
+asyncpg==0.30.0
