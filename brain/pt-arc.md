@@ -14,7 +14,7 @@ ai-engine/
 │   │   ├── auth.py              # JWT auth with Supabase integration
 │   │   └── config.py            # App configuration and env vars
 │   ├── db/                      # Database related code
-│   │   ├── database.py          # DB connection with thread pooling
+│   │   ├── database.py          # Async DB connection with asyncpg
 │   │   ├── models.py            # SQLAlchemy ORM models
 │   │   └── __init__.py
 │   ├── llm/                     # Language model integration
@@ -41,51 +41,118 @@ The Grizz AI Engine is built with a clean, modular architecture following the se
 - Authenticates users via JWT tokens in query parameters
 - Manages connection lifecycle (accept, receive, send, close)
 - Delegates message handling to the service layer
+- Uses async database sessions with proper await patterns
 
 ```python
 @router.websocket("/ws/chat/{conversation_id}")
 async def websocket_chat_endpoint(websocket: WebSocket, conversation_id: str):
-    # Authentication, connection handling, and message processing
-    # Delegates actual chat processing to handle_chat_message
+    async for db in get_async_db():
+        try:
+            # Authentication and connection handling
+            # Delegates to handle_chat_message with async db session
+            await handle_chat_message(
+                user_id=authed_user_id,
+                conversation_id=conversation_id,
+                user_message=data,
+                db=db,  # Pass async db session
+                stream_callback=websocket.send_text
+            )
+        # Error handling and cleanup
 ```
 
 #### Conversation Management (`conversation.py`)
 - Provides REST endpoints for creating/retrieving conversations
 - Handles timezone-aware "today" conversation creation
-- Integrates with database models
+- Uses SQLAlchemy 2.0 style select() statements for async support
+- Properly uses async/await patterns with database operations
+
+```python
+@router.get("/conversations/today")
+async def get_or_create_today_conversation(
+    tz: str = Query("UTC"),
+    user_id: str = Depends(get_current_user_id_from_token),
+    db: AsyncSession = Depends(get_async_db),
+):
+    # Use SQLAlchemy 2.0 style select
+    stmt = select(Conversation).where(
+        Conversation.user_id == user_id,
+        Conversation.conv_day == today_local
+    )
+    result = await db.execute(stmt)
+    convo = result.scalar_one_or_none()
+    
+    # Create new if not found
+    if convo is None:
+        # Create with async commit
+        db.add(convo)
+        await db.commit()
+        await db.refresh(convo)
+```
 
 ### 2. Service Layer (`app/services/`)
 
 #### Chat Service (`chat_service.py`)
-- Orchestrates the entire chat flow:
-  1. Saves user message to database
-  2. Fetches conversation context
+- Orchestrates the entire chat flow with async/await patterns:
+  1. Saves user message to database using async SQLAlchemy
+  2. Fetches conversation context with async calls
   3. Builds prompt for LLM
-  4. Calls OpenAI and streams response
-  5. Saves AI response to database
+  4. Calls OpenAI asynchronously and streams response
+  5. Saves AI response to database with async commits
 
 ```python
-async def handle_chat_message(user_id, conversation_id, user_message, db, stream_callback):
-    # 1. Save user message
-    # 2. Fetch context from memory_service
-    # 3. Build prompt with chat_agent
-    # 4. Stream response from OpenAI with timeouts
-    # 5. Save AI response
+async def handle_chat_message(user_id, conversation_id, user_message, db: AsyncSession, stream_callback):
+    # 1. Save user message with async SQLAlchemy
+    user_msg = Message(
+        conversation_id=conv_id_obj,
+        user_id=user_id,
+        role="user",
+        content=user_message,
+        message_metadata={}  # Use Python dict for JSONB
+    )
+    db.add(user_msg)
+    await db.commit()
+    await db.refresh(user_msg)
+    
+    # 2. Fetch context asynchronously
+    context = await fetch_recent_messages(conversation_id, db)
+    
+    # 3-4. Build prompt and stream LLM response
+    async for chunk in stream_chat_completion(prompt):
+        # Stream chunks with timeout protection
+        
+    # 5. Save AI response asynchronously
+    await db.commit()
 ```
 
 #### Memory Service (`memory_service.py`)
 - Retrieves recent messages from the database for context
-- Simple implementation with potential for more advanced features
+- Uses SQLAlchemy 2.0 select() syntax for async compatibility
+- Properly handles UUID types and ordering
+
+```python
+async def fetch_recent_messages(conversation_id: str, db: AsyncSession, limit: int = 10):
+    # SQLAlchemy 2.0 style select for async compatibility
+    query = (
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    
+    # Execute asynchronously
+    result = await db.execute(query)
+    messages = result.scalars().all()
+```
 
 ### 3. LLM Integration (`app/llm/`)
 
 #### OpenAI Client (`openai_client.py`)
 - Configures AsyncOpenAI client with timeouts
-- Implements streaming with proper error handling
-- Yields response chunks as they arrive
+- Implements asynchronous streaming with proper error handling
+- Yields response chunks as they arrive with async generators
 
 ```python
-async def stream_chat_completion(messages):
+async def stream_chat_completion(messages: list[dict]) -> AsyncGenerator[str, None]:
     try:
         # Create request with timeout protection
         response = await client.chat.completions.create(
@@ -99,44 +166,66 @@ async def stream_chat_completion(messages):
             if chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
     except asyncio.TimeoutError:
-        # Proper timeout handling
+        # Handle timeouts
         yield "\n\n[Error: The AI service took too long to respond...]"
 ```
 
 ### 4. Database Layer (`app/db/`)
 
 #### Database Connection (`database.py`)
-- Configures SQLAlchemy with optimized settings
-- Implements thread pool executor pattern for non-blocking DB operations
-- Includes connection recycling and verification
+- Uses SQLAlchemy's async API with asyncpg driver
+- Configured for Supabase's session pooler mode
+- Proper connection pooling and error handling
+- Async session factory with proper cleanup
 
 ```python
-# Create a synchronous engine with optimized settings
-engine = create_engine(
+# Create an async engine with optimized settings
+engine = create_async_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True,      # Verify connections before using
+    pool_pre_ping=True,      # Verify connections before use
     pool_recycle=180,        # Drop idle connections after 3 minutes
-    echo=True,
+    pool_size=10,            # Appropriate pool size
+    max_overflow=5,          # Allow some overflow for peak loads
+    echo=True,               # Log SQL queries
 )
 
-# Thread pool for non-blocking database operations
-thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+# Create async session factory
+async_session_maker = async_sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,  # Prevent loading expired attributes
+)
 
-async def run_database_operation(operation_func, *args, **kwargs):
-    """Run sync DB operations in a thread pool without blocking the event loop"""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        thread_pool, 
-        lambda: operation_func(*args, **kwargs)
-    )
+# Async database session dependency
+async def get_async_db():
+    session = async_session_maker()
+    try:
+        yield session
+    finally:
+        await session.close()
 ```
 
 #### Data Models (`models.py`)
-- Defines SQLAlchemy ORM models:
+- Defines SQLAlchemy ORM models with proper PostgreSQL types:
   - `Conversation`: Stores chat conversations with timezone support
-  - `Message`: Stores individual chat messages
+  - `Message`: Stores individual chat messages with JSONB metadata
+- Uses PostgreSQL's native UUID type for keys
 - Includes indexes for query optimization
+
+```python
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(UUID, primary_key=True, default=generate_uuid)
+    conversation_id = Column(UUID, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID, nullable=True) 
+    role = Column(String(20), nullable=False)  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)
+    message_metadata = Column("metadata", JSONB, nullable=True)  # Explicitly JSONB type
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+```
 
 ### 5. Agent Layer (`app/agents/`)
 
@@ -167,36 +256,49 @@ async def run_database_operation(operation_func, *args, **kwargs):
 - Deployment settings for Fly.io
 - Optimized health check configuration (30s grace period)
 - Resource allocation (1GB memory)
+- Support for versioned deployments and rollbacks
 
 ## Data Flow
 
 1. **User sends message** → WebSocket endpoint receives it
-2. **WebSocket handler** authenticates and passes to chat service
-3. **Chat service** saves message and retrieves context
+2. **WebSocket handler** authenticates and passes to chat service with async DB session
+3. **Chat service** asynchronously saves message and retrieves context
 4. **Chat agent** builds LLM prompt with system instructions
-5. **OpenAI client** calls API with streaming and timeout protection
+5. **OpenAI client** calls API asynchronously with streaming and timeout protection
 6. **Response chunks** are streamed back through WebSocket
-7. **Complete response** is saved to database
+7. **Complete response** is asynchronously saved to database
 
 ## Recent Optimizations
 
-1. **Async Non-Blocking Architecture**:
-   - Thread pool executor pattern for database operations
-   - Prevents blocking the main event loop during DB operations
+1. **Async Database Layer**:
+   - Replaced thread pool executor pattern with true async/await using asyncpg
+   - Uses SQLAlchemy 2.0 async API for all database operations
+   - Fully non-blocking I/O for database operations
 
-2. **Connection Management**:
+2. **Supabase Session Pooler Mode**:
+   - Configured PostgreSQL to use "session" pooler mode instead of "transaction"
+   - Allows for proper prepared statement handling with asyncpg
+   - Maintains client-server connection throughout a session
+
+3. **PostgreSQL Type Handling**:
+   - Native UUID type support for primary and foreign keys
+   - JSONB type for metadata with proper Python dict handling
+   - Proper timezone-aware date/time handling
+
+4. **Connection Management**:
+   - Configurable connection pool size (currently 10)
    - `pool_pre_ping=True` to verify connections before use
    - `pool_recycle=180` to drop idle connections after 3 minutes
-   - Prevents "stale connection" errors
+   - `expire_on_commit=False` to prevent loading expired attributes
 
-3. **Timeout Protection**:
+5. **Timeout Protection**:
    - OpenAI client configured with 15s default timeout
    - Individual requests can specify custom timeouts (30s)
    - Graceful error handling for timeouts
 
-4. **Health Check Optimization**:
+6. **Health Check Optimization**:
    - Ultra-lightweight `/health` endpoint that responds quickly
    - Fly.io health check configuration with 30s grace period
    - Prevents false unhealthy status during startup
 
-These optimizations ensure the system doesn't hang during API calls, prevents cascading failures, and maintains high availability.
+These optimizations ensure high scalability by leveraging async/await patterns throughout the stack, properly handling database connections for optimal performance, and maintaining robust error handling and timeout protection.
