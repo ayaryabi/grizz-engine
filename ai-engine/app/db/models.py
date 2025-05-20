@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Date, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from .database import Base
 import uuid
 
@@ -36,7 +36,7 @@ class Message(Base):
     user_id = Column(UUID, nullable=True)  # Changed to UUID to match database schema
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)
-    message_metadata = Column("metadata", Text, nullable=True)  # JSON for any additional data
+    message_metadata = Column("metadata", JSONB, nullable=True)  # Explicitly use JSONB for metadata
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     
     conversation = relationship("Conversation", back_populates="messages")

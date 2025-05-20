@@ -5,7 +5,7 @@ from app.api.ws import router as ws_router
 # from app.api.db_test import router as db_test_router # Removed import
 from app.api.conversation import router as conversation_router
 from app.core.config import get_settings
-from app.db.database import engine
+from app.db.database import engine, async_session_maker
 from app.db import models
 import uvicorn
 import logging
@@ -15,9 +15,6 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
-
 settings = get_settings()
 
 # Create FastAPI app with proper concurrency settings
@@ -25,6 +22,15 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
 )
+
+# Initialize database tables asynchronously during startup
+@app.on_event("startup")
+async def init_db():
+    if os.environ.get("CREATE_TABLES", "true").lower() == "true":
+        logger.info("Creating database tables on startup...")
+        async with engine.begin() as conn:
+            await conn.run_sync(models.Base.metadata.create_all)
+        logger.info("Database tables created or verified successfully")
 
 # CORS configuration
 app.add_middleware(
