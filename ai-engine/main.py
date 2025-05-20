@@ -6,10 +6,12 @@ from app.api.ws import router as ws_router
 from app.api.conversation import router as conversation_router
 from app.core.config import get_settings
 from app.db.database import engine, async_session_maker
+from app.core.redis_client import get_redis_pool, close_redis_pool, schedule_maintenance
 from app.db import models
 import uvicorn
 import logging
 import os
+import asyncio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +33,29 @@ async def init_db():
         async with engine.begin() as conn:
             await conn.run_sync(models.Base.metadata.create_all)
         logger.info("Database tables created or verified successfully")
+    
+    # Initialize Redis connection pool
+    await get_redis_pool()
+    logger.info("Redis connection pool initialized")
+    
+    # Start maintenance task
+    app.state.maintenance_task = asyncio.create_task(schedule_maintenance())
+    logger.info("Redis maintenance task started")
+
+# Clean up resources on shutdown
+@app.on_event("shutdown")
+async def shutdown_event():
+    # Cancel maintenance task
+    if hasattr(app.state, 'maintenance_task'):
+        app.state.maintenance_task.cancel()
+        try:
+            await app.state.maintenance_task
+        except asyncio.CancelledError:
+            pass
+    
+    # Close Redis connection pool
+    await close_redis_pool()
+    logger.info("Redis connections closed")
 
 # CORS configuration
 app.add_middleware(

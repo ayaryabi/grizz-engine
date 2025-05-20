@@ -15,8 +15,13 @@ COPY --from=builder /app/.venv .venv/
 COPY . .
 
 # Set environment variables for proper binding
-ENV HOST="0.0.0.0"
-ENV PORT="8000"
+ENV HOST="0.0.0.0" \
+    PORT="8000" \
+    PYTHONPATH="/app" \
+    PATH="/app/.venv/bin:$PATH"
 
-# Run directly with uvicorn with correct module path
-CMD ["/app/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Make scripts executable
+RUN chmod +x /app/launcher.py /app/app/workers/llm_worker.py
+
+# Run launcher script with 2 workers by default
+CMD ["/app/.venv/bin/python", "launcher.py", "--workers", "2"]

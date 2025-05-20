@@ -1,12 +1,16 @@
 from fastapi import WebSocket, WebSocketDisconnect, APIRouter, Depends, Query, HTTPException, status, Path
 import logging
 import json # For sending simple JSON responses like errors
+import uuid
+import asyncio
 from urllib.parse import parse_qs # Import to parse query parameters
 from app.core.auth import validate_jwt_token
-from app.services.chat_service import handle_chat_message
 from app.db.database import get_async_db
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import insert
 from starlette.websockets import WebSocketState
+from app.db.models import Message
+from app.services.queue_service import queue_chat_message, listen_for_job_results
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -51,26 +55,101 @@ async def websocket_chat_endpoint(
                 logger.error(f"WebSocket authentication failed: {auth_exc.detail}")
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                 return
-
+            
+            # Create a unique client ID for this websocket connection
+            client_id = f"client:{uuid.uuid4()}"
+            
+            # Background task for listening to results
+            listen_task = None
+            
             logger.info("Attempting to accept WebSocket connection...")
             await websocket.accept()
             logger.info(f"WebSocket connection accepted for authed_user_id: {authed_user_id} to conversation_id: {conversation_id}")
-
-            while True:
-                logger.debug("Waiting for message...")
-                data = await websocket.receive_text()
-                logger.info(f"Received message from user {authed_user_id}: {data[:100]}...")  # Log first 100 chars
+            
+            try:
+                while True:
+                    logger.debug("Waiting for message...")
+                    user_message = await websocket.receive_text()
+                    logger.info(f"Received message from user {authed_user_id}: {user_message[:100]}...")  # Log first 100 chars
+                    
+                    # 1. Save user message to DB
+                    try:
+                        user_msg = Message(
+                            conversation_id=uuid.UUID(conversation_id),
+                            user_id=authed_user_id,
+                            role="user",
+                            content=user_message,
+                            message_metadata={}
+                        )
+                        db.add(user_msg)
+                        await db.commit()
+                        await db.refresh(user_msg)
+                        logger.info(f"Saved user message for conversation: {conversation_id}")
+                    except Exception as db_error:
+                        logger.error(f"Error saving user message: {str(db_error)}", exc_info=True)
+                        await websocket.send_text("\n\n[Error: Could not save your message. Please try again.]")
+                        continue
+                    
+                    # 2. Queue the chat message for processing
+                    try:
+                        job_id = await queue_chat_message(
+                            user_id=authed_user_id,
+                            conversation_id=conversation_id,
+                            message=user_message,
+                            client_id=client_id
+                        )
+                        
+                        logger.info(f"Queued job {job_id} for conversation {conversation_id}")
+                        
+                        # Send an acknowledgment to the client
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "ack",
+                                "job_id": job_id,
+                                "message": "Message received, processing..."
+                            })
+                        )
+                        
+                        # Start the result listener task for this specific job
+                        if listen_task and not listen_task.done():
+                            listen_task.cancel()
+                            try:
+                                await listen_task
+                            except asyncio.CancelledError:
+                                pass
+                        
+                        listen_task = asyncio.create_task(
+                            listen_for_job_results(
+                                client_id=client_id,
+                                result_callback=websocket.send_text,
+                                job_id=job_id,
+                                timeout_seconds=120  # 2 minute timeout
+                            )
+                        )
+                        
+                    except ValueError as e:
+                        # System overloaded or other queue error
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "error",
+                                "message": str(e)
+                            })
+                        )
+                    except Exception as e:
+                        logger.error(f"Error queueing message: {str(e)}", exc_info=True)
+                        await websocket.send_text("\n\n[Error: Could not process your message. Please try again.]")
                 
-                await handle_chat_message(
-                    user_id=authed_user_id,
-                    conversation_id=conversation_id,
-                    user_message=data,
-                    db=db,
-                    stream_callback=websocket.send_text
-                )
-        except WebSocketDisconnect:
-            logger.warning(f"WebSocket disconnected for conversation_id: {conversation_id}")
-            break
+            except WebSocketDisconnect:
+                logger.warning(f"WebSocket disconnected for conversation_id: {conversation_id}")
+                break
+            finally:
+                # Clean up the background task if it exists
+                if listen_task and not listen_task.done():
+                    listen_task.cancel()
+                    try:
+                        await listen_task
+                    except asyncio.CancelledError:
+                        pass
         except Exception as e:
             logger.error(f"Error in WebSocket for conversation_id: {conversation_id}: {str(e)}", exc_info=True)
             if websocket.client_state != WebSocketState.DISCONNECTED:

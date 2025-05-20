@@ -27,7 +27,20 @@ primary_region = 'fra'
     timeout = "5s"              # Shorter timeout for health checks
     tls_skip_verify = false
 
+# Updated VM configuration for Redis queue workers
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  memory = "1gb"
+  memory = "2gb"  # Increased memory for worker processes
+
+# Environment variables
+[env]
+  # Number of worker processes to run
+  WORKER_COUNT = "2"
+  # Set to production for optimized Redis connection usage
+  ENV = "production"
+
+# Redis configuration
+[mounts]
+  source = "redis_data"
+  destination = "/data"
