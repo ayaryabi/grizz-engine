@@ -21,7 +21,14 @@ from typing import Dict, Any, List, Optional
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import redis.asyncio as redis
-from app.core.redis_client import get_redis_pool, close_redis_pool, LLM_JOBS_STREAM, RESULT_STREAM, LLM_JOBS_DEAD
+from app.core.redis_client import (
+    get_redis_pool, 
+    close_redis_pool, 
+    LLM_JOBS_STREAM, 
+    RESULT_STREAM, 
+    LLM_JOBS_DEAD,
+    safe_redis_operation
+)
 from app.core.queue import move_to_dead_letter, publish_result_chunk
 from app.llm.openai_client import AsyncOpenAI, stream_chat_completion
 from app.services.memory_service import fetch_recent_messages
@@ -215,12 +222,13 @@ async def worker_loop():
     while not shutdown_event.is_set():
         try:
             # Read new messages from the stream using consumer group
-            streams = await redis_conn.xreadgroup(
+            streams = await safe_redis_operation(
+                redis_conn.xreadgroup,
                 CONSUMER_GROUP,
                 WORKER_ID,
                 {LLM_JOBS_STREAM: ">"},  # > means "give me undelivered messages"
                 count=1,
-                block=100  # Check for jobs every 100ms
+                block=5000  # Block for 5 seconds to reduce polling frequency
             )
             
             if not streams:
@@ -245,8 +253,8 @@ async def worker_loop():
             
             if success:
                 # Acknowledge the message (mark as processed)
-                await redis_conn.xack(LLM_JOBS_STREAM, CONSUMER_GROUP, message_id)
-                await redis_conn.xdel(LLM_JOBS_STREAM, message_id)
+                await safe_redis_operation(redis_conn.xack, LLM_JOBS_STREAM, CONSUMER_GROUP, message_id)
+                await safe_redis_operation(redis_conn.xdel, LLM_JOBS_STREAM, message_id)
                 logger.info(f"Job {data.get('job_id', 'unknown')} completed and acknowledged")
             else:
                 # Job failed
@@ -256,13 +264,13 @@ async def worker_loop():
                     data["last_error_time"] = str(time.time())
                     
                     # Acknowledge current ID to remove from pending
-                    await redis_conn.xack(LLM_JOBS_STREAM, CONSUMER_GROUP, message_id)
+                    await safe_redis_operation(redis_conn.xack, LLM_JOBS_STREAM, CONSUMER_GROUP, message_id)
                     
                     # Add back to stream with updated retry info
-                    await redis_conn.xadd(LLM_JOBS_STREAM, data)
+                    await safe_redis_operation(redis_conn.xadd, LLM_JOBS_STREAM, data)
                     
                     # Delete the original message
-                    await redis_conn.xdel(LLM_JOBS_STREAM, message_id)
+                    await safe_redis_operation(redis_conn.xdel, LLM_JOBS_STREAM, message_id)
                     
                     logger.warning(f"Job {data.get('job_id')} failed, requeued for retry {retry_count + 1}/{MAX_RETRY_COUNT}")
                     
@@ -290,79 +298,84 @@ async def handle_pending_jobs():
     """Check for and handle any pending jobs from previous runs"""
     redis_conn = await get_redis_pool()
     
-    # Claim pending jobs from Redis
-    pending = await redis_conn.xpending(LLM_JOBS_STREAM, CONSUMER_GROUP)
-    
-    if pending["pending"] > 0:
-        logger.info(f"Found {pending['pending']} pending jobs from previous runs")
+    try:
+        # Claim pending jobs from Redis
+        pending = await safe_redis_operation(redis_conn.xpending, LLM_JOBS_STREAM, CONSUMER_GROUP)
         
-        # Get details on pending jobs
-        pending_jobs = await redis_conn.xpending_range(
-            LLM_JOBS_STREAM, 
-            CONSUMER_GROUP,
-            "-",  # minimum ID
-            "+",  # maximum ID
-            pending["pending"]
-        )
-        
-        for job in pending_jobs:
-            msg_id = job["message_id"]
-            consumer = job["consumer"]
-            idle_time = job.get("idle", 0)  # Use .get() with a default value of 0
+        if pending["pending"] > 0:
+            logger.info(f"Found {pending['pending']} pending jobs from previous runs")
             
-            # If job has been idle for more than 30 seconds, claim it
-            if idle_time > 30000:  # 30 seconds in milliseconds
-                claimed = await redis_conn.xclaim(
-                    LLM_JOBS_STREAM,
-                    CONSUMER_GROUP,
-                    WORKER_ID,
-                    min_idle_time=30000,
-                    message_ids=[msg_id]
-                )
+            # Get details on pending jobs
+            pending_jobs = await safe_redis_operation(
+                redis_conn.xpending_range,
+                LLM_JOBS_STREAM, 
+                CONSUMER_GROUP,
+                "-",  # minimum ID
+                "+",  # maximum ID
+                pending["pending"]
+            )
+            
+            for job in pending_jobs:
+                msg_id = job["message_id"]
+                consumer = job["consumer"]
+                idle_time = job.get("idle", 0)  # Use .get() with a default value of 0
                 
-                if claimed:
-                    logger.info(f"Claimed pending job {msg_id} from {consumer}")
+                # If job has been idle for more than 30 seconds, claim it
+                if idle_time > 30000:  # 30 seconds in milliseconds
+                    claimed = await safe_redis_operation(
+                        redis_conn.xclaim,
+                        LLM_JOBS_STREAM,
+                        CONSUMER_GROUP,
+                        WORKER_ID,
+                        min_idle_time=30000,
+                        message_ids=[msg_id]
+                    )
                     
-                    # Get the job data
-                    job_data = claimed[0][1]
-                    
-                    # Process the job
-                    retry_count = int(job_data.get("retry_count", "0"))
-                    
-                    if retry_count < MAX_RETRY_COUNT:
-                        # Increment retry count and process
-                        job_data["retry_count"] = str(retry_count + 1)
-                        job_data["reclaimed"] = "true"
+                    if claimed:
+                        logger.info(f"Claimed pending job {msg_id} from {consumer}")
+                        
+                        # Get the job data
+                        job_data = claimed[0][1]
                         
                         # Process the job
-                        success = await process_chat_job(redis_conn, job_data)
+                        retry_count = int(job_data.get("retry_count", "0"))
                         
-                        if success:
-                            # Acknowledge the message
-                            await redis_conn.xack(LLM_JOBS_STREAM, CONSUMER_GROUP, msg_id)
-                            await redis_conn.xdel(LLM_JOBS_STREAM, msg_id)
-                            logger.info(f"Reclaimed job {job_data.get('job_id', 'unknown')} completed")
-                        else:
-                            # Failed to process
-                            if retry_count + 1 < MAX_RETRY_COUNT:
-                                # Still has retries left
-                                logger.warning(f"Reclaimed job failed, will be retried")
+                        if retry_count < MAX_RETRY_COUNT:
+                            # Increment retry count and process
+                            job_data["retry_count"] = str(retry_count + 1)
+                            job_data["reclaimed"] = "true"
+                            
+                            # Process the job
+                            success = await process_chat_job(redis_conn, job_data)
+                            
+                            if success:
+                                # Acknowledge the message
+                                await safe_redis_operation(redis_conn.xack, LLM_JOBS_STREAM, CONSUMER_GROUP, msg_id)
+                                await safe_redis_operation(redis_conn.xdel, LLM_JOBS_STREAM, msg_id)
+                                logger.info(f"Reclaimed job {job_data.get('job_id', 'unknown')} completed")
                             else:
-                                # Move to dead letter queue
-                                await move_to_dead_letter(
-                                    redis_conn,
-                                    msg_id,
-                                    job_data,
-                                    "Max retry count exceeded after reclaiming"
-                                )
-                    else:
-                        # Already at max retries, move to dead letter
-                        await move_to_dead_letter(
-                            redis_conn,
-                            msg_id,
-                            job_data,
-                            "Max retry count exceeded"
-                        )
+                                # Failed to process
+                                if retry_count + 1 < MAX_RETRY_COUNT:
+                                    # Still has retries left
+                                    logger.warning(f"Reclaimed job failed, will be retried")
+                                else:
+                                    # Move to dead letter queue
+                                    await move_to_dead_letter(
+                                        redis_conn,
+                                        msg_id,
+                                        job_data,
+                                        "Max retry count exceeded after reclaiming"
+                                    )
+                        else:
+                            # Already at max retries, move to dead letter
+                            await move_to_dead_letter(
+                                redis_conn,
+                                msg_id,
+                                job_data,
+                                "Max retry count exceeded"
+                            )
+    except Exception as e:
+        logger.error(f"Error handling pending jobs: {str(e)}")
 
 def handle_signals():
     """Set up signal handlers for graceful shutdown"""
@@ -386,7 +399,8 @@ async def main():
         # Try to create the consumer group (if not exists)
         redis_conn = await get_redis_pool()
         try:
-            await redis_conn.xgroup_create(
+            await safe_redis_operation(
+                redis_conn.xgroup_create,
                 LLM_JOBS_STREAM, 
                 CONSUMER_GROUP, 
                 mkstream=True, 
@@ -398,17 +412,16 @@ async def main():
                 logger.info(f"Consumer group '{CONSUMER_GROUP}' already exists")
             else:
                 raise
-        
-        # Handle any pending jobs from previous runs
+
+        # Check for pending jobs from previous runs
         await handle_pending_jobs()
         
         # Start worker loop
         await worker_loop()
-        
     except Exception as e:
-        logger.error(f"Fatal error in worker: {str(e)}", exc_info=True)
+        logger.error(f"Unhandled exception in main: {str(e)}", exc_info=True)
     finally:
-        # Clean up resources
+        # Clean up Redis connection
         await close_redis_pool()
         logger.info("Worker shutdown complete")
 

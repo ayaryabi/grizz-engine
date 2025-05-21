@@ -9,7 +9,8 @@ from app.core.redis_client import (
     get_redis_pool, 
     LLM_JOBS_STREAM, 
     RESULT_STREAM, 
-    LLM_JOBS_DEAD
+    LLM_JOBS_DEAD,
+    safe_redis_operation
 )
 
 logger = logging.getLogger(__name__)
@@ -22,11 +23,14 @@ async def get_pending_job_count() -> int:
     """Get count of pending jobs in the queue"""
     redis_conn = await get_redis_pool()
     try:
-        info = await redis_conn.xinfo_stream(LLM_JOBS_STREAM)
+        info = await safe_redis_operation(redis_conn.xinfo_stream, LLM_JOBS_STREAM)
         return info["length"]
     except redis.ResponseError:
         # Stream doesn't exist yet
         return 0
+    except Exception as e:
+        logger.error(f"Error getting pending job count: {str(e)}")
+        return 0  # Return 0 on error to avoid false backpressure alerts
 
 async def check_backpressure() -> int:
     """
@@ -82,12 +86,16 @@ async def enqueue_chat_job(
         "status": "pending"
     }
     
-    # Add to Redis Stream
-    msg_id = await redis_conn.xadd(LLM_JOBS_STREAM, job_data, id="*")
-    logger.info(f"Enqueued chat job {job_id} (msg_id: {msg_id}) for conversation {conversation_id}")
+    # Add to Redis Stream with error handling
+    try:
+        msg_id = await safe_redis_operation(redis_conn.xadd, LLM_JOBS_STREAM, job_data, id="*")
+        logger.info(f"Enqueued chat job {job_id} (msg_id: {msg_id}) for conversation {conversation_id}")
+    except Exception as e:
+        logger.error(f"Failed to enqueue job {job_id}: {str(e)}")
+        raise ValueError(f"Failed to enqueue message: {str(e)}") from e
     
-    # Apply sensible trimming to keep stream size manageable
-    await redis_conn.xtrim(LLM_JOBS_STREAM, maxlen=10000, approximate=True)
+    # Trim is now handled by the periodic maintenance task in redis_client.py
+    # This avoids unnecessary Redis operations on every job
     
     return job_id
 
@@ -116,13 +124,22 @@ async def publish_result_chunk(
         "timestamp": time.time()
     }
     
-    await redis_conn.xadd(RESULT_STREAM, result_data, id="*")
-    
-    # If this is the final chunk, trim the result stream
-    if is_final:
-        await redis_conn.xtrim(RESULT_STREAM, maxlen=50000, approximate=True)
-    
-    logger.debug(f"Published result chunk for job {job_id}, final: {is_final}")
+    try:
+        await safe_redis_operation(redis_conn.xadd, RESULT_STREAM, result_data, id="*")
+        
+        # Only trim on final chunk to reduce Redis operations
+        if is_final:
+            await safe_redis_operation(
+                redis_conn.xtrim, 
+                RESULT_STREAM, 
+                maxlen=50000, 
+                approximate=True
+            )
+        
+        logger.debug(f"Published result chunk for job {job_id}, final: {is_final}")
+    except Exception as e:
+        logger.error(f"Failed to publish chunk for job {job_id}: {str(e)}")
+        # Don't raise here - we want the worker to continue even if publishing fails
 
 async def move_to_dead_letter(
     redis_conn: redis.Redis,
@@ -143,11 +160,19 @@ async def move_to_dead_letter(
     job_data["error"] = error
     job_data["failed_at"] = time.time()
     
-    # Add to dead letter queue
-    await redis_conn.xadd(LLM_JOBS_DEAD, job_data, id="*")
-    
-    # Remove from main queue
-    await redis_conn.xack(LLM_JOBS_STREAM, "llm_workers", message_id)
-    await redis_conn.xdel(LLM_JOBS_STREAM, message_id)
-    
-    logger.warning(f"Moved job {job_data.get('job_id')} to dead letter queue: {error}") 
+    try:
+        # Add to dead letter queue
+        await safe_redis_operation(redis_conn.xadd, LLM_JOBS_DEAD, job_data, id="*")
+        
+        # Remove from main queue
+        await safe_redis_operation(redis_conn.xack, LLM_JOBS_STREAM, "llm_workers", message_id)
+        await safe_redis_operation(redis_conn.xdel, LLM_JOBS_STREAM, message_id)
+        
+        logger.warning(f"Moved job {job_data.get('job_id')} to dead letter queue: {error}")
+    except Exception as e:
+        logger.error(f"Failed to move job to dead letter queue: {str(e)}")
+        # Try to acknowledge the message to prevent reprocessing, even if move failed
+        try:
+            await redis_conn.xack(LLM_JOBS_STREAM, "llm_workers", message_id)
+        except Exception:
+            pass 

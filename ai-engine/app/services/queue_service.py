@@ -1,9 +1,10 @@
-from app.core.redis_client import get_redis_pool, RESULT_STREAM
+from app.core.redis_client import get_redis_pool, RESULT_STREAM, safe_redis_operation
 from app.core.queue import enqueue_chat_job, check_backpressure, publish_result_chunk
 import asyncio
 import logging
 import json
 import uuid
+import time
 from typing import Callable, Any, Optional, Dict
 from fastapi import WebSocket
 
@@ -82,6 +83,9 @@ async def listen_for_job_results(
     # Start time for timeout calculation
     start_time = asyncio.get_event_loop().time()
     
+    # Stream key to listen to
+    stream_key = f"results:{client_id}"
+    
     logger.info(f"Started listening for results for client: {client_id}" + 
                 (f", job: {job_id}" if job_id else ""))
     
@@ -99,15 +103,32 @@ async def listen_for_job_results(
                         logger.error(f"Error sending timeout message: {str(e)}")
                 break
             
-            # Read new messages from the stream with a short timeout for responsive streaming
-            streams = await redis_conn.xread(
-                streams={RESULT_STREAM: last_id},
-                count=10,
-                block=100
-            )
+            # Calculate remaining time for this timeout period
+            remaining_time = max(1000, int((timeout_seconds - elapsed) * 1000))
             
-            if not streams:  # No new messages
-                await asyncio.sleep(0.01)
+            # Use a long blocking read (up to 15 seconds) to drastically reduce polling frequency
+            # This is the key optimization to reduce Redis operations
+            try:
+                streams = await safe_redis_operation(
+                    redis_conn.xread,
+                    streams={RESULT_STREAM: last_id},
+                    count=20,  # Process more messages at once
+                    block=15000  # Block for up to 15 seconds
+                )
+            except ValueError as e:
+                # Handle errors from safe_redis_operation
+                logger.error(f"Redis error during blocking read: {str(e)}")
+                try:
+                    await result_callback("\n\n[Error: Server busy. Please try again later.]")
+                except Exception as callback_err:
+                    logger.error(f"Error sending error message: {str(callback_err)}")
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error during Redis read: {str(e)}")
+                await asyncio.sleep(0.5)  # Brief pause on errors
+                continue
+            
+            if not streams:  # No new messages after blocking period
                 continue
                 
             stream_name, messages = streams[0]
@@ -136,10 +157,8 @@ async def listen_for_job_results(
                 
                 # Send the chunk to the client
                 try:
-                    send_start_time = asyncio.get_event_loop().time()
                     await result_callback(chunk)
-                    send_duration = asyncio.get_event_loop().time() - send_start_time
-                    logger.debug(f"Client {client_id}, Job {result_job_id}: Sent chunk via WebSocket in {send_duration:.4f}s. Final: {is_final}")
+                    logger.debug(f"Client {client_id}, Job {result_job_id}: Sent chunk via WebSocket. Final: {is_final}")
                 except Exception as e:
                     logger.error(f"Error sending to callback for client {client_id}, job {result_job_id}: {str(e)}")
                     return # Exit if callback fails
@@ -153,8 +172,6 @@ async def listen_for_job_results(
             # Also exit if we've processed the final message for any job
             if received_final:
                 break
-                
-            # No sleep here if streams were processed, loop immediately to check for more
     
     except asyncio.CancelledError:
         # Task was cancelled, exit gracefully
