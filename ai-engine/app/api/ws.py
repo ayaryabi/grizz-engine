@@ -101,15 +101,6 @@ async def websocket_chat_endpoint(
                         
                         logger.info(f"Queued job {job_id} for conversation {conversation_id}")
                         
-                        # Send an acknowledgment to the client
-                        await websocket.send_text(
-                            json.dumps({
-                                "type": "ack",
-                                "job_id": job_id,
-                                "message": "Message received, processing..."
-                            })
-                        )
-                        
                         # Start the result listener task for this specific job
                         if listen_task and not listen_task.done():
                             listen_task.cancel()

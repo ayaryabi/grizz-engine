@@ -84,66 +84,90 @@ async def process_chat_job(
     
     # Create database session
     db = async_session_maker()
+    full_response = ""
+    
     try:
         # 1. Fetch conversation context
         context = await fetch_recent_messages(conversation_id, db)
         
         # 2. Build the prompt for the LLM
-        messages = build_prompt(context, message)
+        messages_for_llm = build_prompt(context, message)
         
-        # 3. Stream response from OpenAI and publish chunks as they arrive
-        full_response = ""
-        async for chunk in stream_chat_completion(messages):
-            # Publish the chunk to Redis for immediate streaming to client
+        # 3. Stream response from OpenAI and publish chunks
+        chunks_iterator = stream_chat_completion(messages_for_llm)
+        
+        previous_chunk = None
+        has_sent_chunks = False
+
+        async for current_chunk_content in chunks_iterator:
+            if previous_chunk is not None: # If there was a previous chunk, send it now as not final
+                await publish_result_chunk(
+                    redis_conn, 
+                    job_id, 
+                    previous_chunk, 
+                    client_id, 
+                    is_final=False
+                )
+                full_response += previous_chunk
+                has_sent_chunks = True
+            previous_chunk = current_chunk_content # current becomes previous for next iteration
+
+        # After the loop, previous_chunk holds the last chunk, or is None if stream was empty
+        if previous_chunk is not None: # If there was any content at all
             await publish_result_chunk(
-                redis_conn, 
-                job_id, 
-                chunk, 
-                client_id, 
-                is_final=False
+                redis_conn,
+                job_id,
+                previous_chunk,
+                client_id,
+                is_final=True # This is the actual last chunk
             )
-            full_response += chunk
-        
-        # 4. After all chunks are received, save the complete assistant message to the database
-        #    Only save if full_response is not empty (OpenAI might return an empty stream on rare occasions or if content is just an error message from stream_chat_completion)
-        if full_response: # stream_chat_completion yields error messages as strings too
+            full_response += previous_chunk
+            has_sent_chunks = True
+        elif not has_sent_chunks: # Stream was empty and nothing was sent
+             await publish_result_chunk(
+                redis_conn,
+                job_id,
+                "", # Send an empty string
+                client_id,
+                is_final=True # Mark as final
+            )
+            # full_response remains "" which is correct for an empty response
+
+        # 4. Save the complete assistant message if there was a response
+        if full_response: # Only save if there was content
             ai_message = Message(
                 conversation_id=uuid.UUID(conversation_id),
                 user_id=user_id,
                 role="assistant",
-                content=full_response,  # Use the accumulated full response
-                message_metadata={"completed": True} # Mark as completed
+                content=full_response,
+                message_metadata={"completed": True}
             )
             db.add(ai_message)
             await db.commit()
-            # await db.refresh(ai_message) # Not strictly needed if we don't use the ai_message object further
-            logger.info(f"Saved full assistant message for job {job_id} to database.")
+            logger.info(f"Saved full response for job {job_id} to DB.")
         else:
-            logger.warning(f"Job {job_id} resulted in an empty full_response. Nothing saved to assistant message history.")
+            logger.info(f"No content generated for job {job_id}. Nothing to save to DB.")
 
-        # 5. Send final message to client to indicate end of streaming
-        await publish_result_chunk(
-            redis_conn, 
-            job_id, 
-            "\n\n[End of response]", 
-            client_id, 
-            is_final=True
-        )
-        
-        logger.info(f"Successfully processed job {job_id}")
         return True
         
     except Exception as e:
         logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
-        # Notify the client that there was an error
-        try:
-            error_message = f"\n\n[Error: {str(e)}]"
-            await publish_result_chunk(redis_conn, job_id, error_message, client_id, is_final=True)
-        except Exception as notify_error:
-            logger.error(f"Failed to notify client of error: {str(notify_error)}")
+        # Publish an error chunk to the client
+        error_message_for_client = f"[Error: Sorry, an unexpected error occurred while processing your request. Job ID: {job_id}]"
+        await publish_result_chunk(
+            redis_conn,
+            job_id,
+            error_message_for_client,
+            client_id,
+            is_final=True # Error is also a final state for this stream
+        )
+        # Optionally, save an error placeholder to DB or handle differently
+        # For now, we are not saving OpenAI errors to the message history here,
+        # only publishing to client.
         return False
     finally:
         await db.close()
+        logger.info(f"Finished processing chat job {job_id}. DB session closed.")
 
 async def worker_loop():
     """Main worker loop that processes jobs from Redis"""
