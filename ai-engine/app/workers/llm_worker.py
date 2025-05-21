@@ -85,22 +85,39 @@ async def process_chat_job(
     # Create database session
     db = async_session_maker()
     full_response = ""
+    loop = asyncio.get_event_loop()
     
     try:
+        processing_start_time = loop.time()
         # 1. Fetch conversation context
+        db_fetch_start_time = loop.time()
         context = await fetch_recent_messages(conversation_id, db)
+        db_fetch_duration = loop.time() - db_fetch_start_time
+        logger.info(f"Job {job_id}: Fetched context in {db_fetch_duration:.4f}s")
         
         # 2. Build the prompt for the LLM
+        build_prompt_start_time = loop.time()
         messages_for_llm = build_prompt(context, message)
+        build_prompt_duration = loop.time() - build_prompt_start_time
+        logger.info(f"Job {job_id}: Built prompt in {build_prompt_duration:.4f}s")
         
         # 3. Stream response from OpenAI and publish chunks
+        openai_call_start_time = loop.time()
         chunks_iterator = stream_chat_completion(messages_for_llm)
         
         previous_chunk = None
         has_sent_chunks = False
+        first_chunk_received = False
 
         async for current_chunk_content in chunks_iterator:
-            if previous_chunk is not None: # If there was a previous chunk, send it now as not final
+            if not first_chunk_received:
+                first_chunk_time = loop.time() - openai_call_start_time
+                logger.info(f"Job {job_id}: Time to first chunk from OpenAI: {first_chunk_time:.4f}s")
+                first_chunk_received = True
+            
+            # Logic to send previous_chunk if it exists
+            if previous_chunk is not None: 
+                publish_start_time = loop.time()
                 await publish_result_chunk(
                     redis_conn, 
                     job_id, 
@@ -108,33 +125,49 @@ async def process_chat_job(
                     client_id, 
                     is_final=False
                 )
+                publish_duration = loop.time() - publish_start_time
+                logger.debug(f"Job {job_id}: Published chunk to Redis in {publish_duration:.4f}s")
                 full_response += previous_chunk
                 has_sent_chunks = True
-            previous_chunk = current_chunk_content # current becomes previous for next iteration
+            previous_chunk = current_chunk_content
 
-        # After the loop, previous_chunk holds the last chunk, or is None if stream was empty
-        if previous_chunk is not None: # If there was any content at all
+        # After the loop, handle the very last chunk (or empty stream)
+        if previous_chunk is not None: 
+            if not first_chunk_received: # Handle case where stream had only ONE chunk
+                first_chunk_time = loop.time() - openai_call_start_time
+                logger.info(f"Job {job_id}: Time to first (and only) chunk from OpenAI: {first_chunk_time:.4f}s")
+            
+            publish_start_time = loop.time()
             await publish_result_chunk(
                 redis_conn,
                 job_id,
                 previous_chunk,
                 client_id,
-                is_final=True # This is the actual last chunk
+                is_final=True 
             )
+            publish_duration = loop.time() - publish_start_time
+            logger.info(f"Job {job_id}: Published FINAL chunk to Redis in {publish_duration:.4f}s")
             full_response += previous_chunk
             has_sent_chunks = True
-        elif not has_sent_chunks: # Stream was empty and nothing was sent
-             await publish_result_chunk(
+        elif not has_sent_chunks: # Stream was empty
+            if not first_chunk_received: # Log time to (non) first chunk if stream was empty
+                first_chunk_time = loop.time() - openai_call_start_time
+                logger.info(f"Job {job_id}: Time to (empty) response from OpenAI: {first_chunk_time:.4f}s")
+            
+            publish_start_time = loop.time()
+            await publish_result_chunk(
                 redis_conn,
                 job_id,
-                "", # Send an empty string
+                "", 
                 client_id,
-                is_final=True # Mark as final
+                is_final=True 
             )
-            # full_response remains "" which is correct for an empty response
+            publish_duration = loop.time() - publish_start_time
+            logger.info(f"Job {job_id}: Published FINAL empty chunk to Redis in {publish_duration:.4f}s")
 
-        # 4. Save the complete assistant message if there was a response
-        if full_response: # Only save if there was content
+        # 4. Save the complete assistant message
+        db_save_start_time = loop.time()
+        if full_response: 
             ai_message = Message(
                 conversation_id=uuid.UUID(conversation_id),
                 user_id=user_id,
@@ -144,10 +177,13 @@ async def process_chat_job(
             )
             db.add(ai_message)
             await db.commit()
-            logger.info(f"Saved full response for job {job_id} to DB.")
+            db_save_duration = loop.time() - db_save_start_time
+            logger.info(f"Job {job_id}: Saved full response to DB in {db_save_duration:.4f}s")
         else:
-            logger.info(f"No content generated for job {job_id}. Nothing to save to DB.")
-
+            logger.info(f"Job {job_id}: No content generated. Nothing to save to DB.")
+        
+        total_processing_duration = loop.time() - processing_start_time
+        logger.info(f"Job {job_id}: Total processing time in worker (excluding ack): {total_processing_duration:.4f}s")
         return True
         
     except Exception as e:
@@ -184,7 +220,7 @@ async def worker_loop():
                 WORKER_ID,
                 {LLM_JOBS_STREAM: ">"},  # > means "give me undelivered messages"
                 count=1,
-                block=5000  # 5 second timeout
+                block=100  # Check for jobs every 100ms
             )
             
             if not streams:

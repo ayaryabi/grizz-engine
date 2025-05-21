@@ -39,8 +39,3 @@ primary_region = 'fra'
   WORKER_COUNT = "2"
   # Set to production for optimized Redis connection usage
   ENV = "production"
-
-# Redis configuration
-[mounts]
-  source = "redis_data"
-  destination = "/data"

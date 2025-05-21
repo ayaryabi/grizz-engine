@@ -103,10 +103,11 @@ async def listen_for_job_results(
             streams = await redis_conn.xread(
                 streams={RESULT_STREAM: last_id},
                 count=10,
-                block=500  # 500ms timeout for responsive streaming
+                block=100
             )
             
             if not streams:  # No new messages
+                await asyncio.sleep(0.01)
                 continue
                 
             stream_name, messages = streams[0]
@@ -135,11 +136,13 @@ async def listen_for_job_results(
                 
                 # Send the chunk to the client
                 try:
+                    send_start_time = asyncio.get_event_loop().time()
                     await result_callback(chunk)
-                    logger.debug(f"Sent chunk to client {client_id}, job: {result_job_id}, final: {is_final}")
+                    send_duration = asyncio.get_event_loop().time() - send_start_time
+                    logger.debug(f"Client {client_id}, Job {result_job_id}: Sent chunk via WebSocket in {send_duration:.4f}s. Final: {is_final}")
                 except Exception as e:
-                    logger.error(f"Error sending to callback: {str(e)}")
-                    return
+                    logger.error(f"Error sending to callback for client {client_id}, job {result_job_id}: {str(e)}")
+                    return # Exit if callback fails
                 
                 # If this is the final message and we were waiting for a specific job,
                 # we can exit
@@ -151,8 +154,7 @@ async def listen_for_job_results(
             if received_final:
                 break
                 
-            # Small sleep to prevent tight loop
-            await asyncio.sleep(0.01)
+            # No sleep here if streams were processed, loop immediately to check for more
     
     except asyncio.CancelledError:
         # Task was cancelled, exit gracefully

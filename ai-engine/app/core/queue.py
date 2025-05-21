@@ -40,9 +40,10 @@ async def check_backpressure() -> int:
     """
     count = await get_pending_job_count()
     if count > MAX_PENDING_JOBS:
+        logger.error(f"BACKPRESSURE: System critically overloaded with {count} pending jobs. Rejecting request.")
         raise ValueError(f"System overloaded with {count} pending jobs")
     elif count > RATE_LIMIT_THRESHOLD:
-        # Apply rate limiting if approaching threshold
+        logger.warning(f"BACKPRESSURE: Approaching overload with {count} pending jobs. Applying 1s delay.")
         await asyncio.sleep(1.0)  # Slow down
     return count
 
