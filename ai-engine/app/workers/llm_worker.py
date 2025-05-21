@@ -91,19 +91,7 @@ async def process_chat_job(
         # 2. Build the prompt for the LLM
         messages = build_prompt(context, message)
         
-        # 3. Create an assistant message in the database that we'll update later
-        ai_message = Message(
-            conversation_id=uuid.UUID(conversation_id),
-            user_id=user_id,
-            role="assistant",
-            content="",  # Empty content initially
-            message_metadata={"streaming": True}
-        )
-        db.add(ai_message)
-        await db.commit()
-        await db.refresh(ai_message)
-        
-        # 4. Stream response from OpenAI
+        # 3. Stream response from OpenAI and publish chunks as they arrive
         full_response = ""
         async for chunk in stream_chat_completion(messages):
             # Publish the chunk to Redis for immediate streaming to client
@@ -114,16 +102,26 @@ async def process_chat_job(
                 client_id, 
                 is_final=False
             )
-            
-            # Add to the full response we'll save to the database
             full_response += chunk
         
-        # 5. Update the database with the complete response
-        ai_message.content = full_response
-        ai_message.message_metadata = {"completed": True}
-        await db.commit()
-        
-        # 6. Send final message to client
+        # 4. After all chunks are received, save the complete assistant message to the database
+        #    Only save if full_response is not empty (OpenAI might return an empty stream on rare occasions or if content is just an error message from stream_chat_completion)
+        if full_response: # stream_chat_completion yields error messages as strings too
+            ai_message = Message(
+                conversation_id=uuid.UUID(conversation_id),
+                user_id=user_id,
+                role="assistant",
+                content=full_response,  # Use the accumulated full response
+                message_metadata={"completed": True} # Mark as completed
+            )
+            db.add(ai_message)
+            await db.commit()
+            # await db.refresh(ai_message) # Not strictly needed if we don't use the ai_message object further
+            logger.info(f"Saved full assistant message for job {job_id} to database.")
+        else:
+            logger.warning(f"Job {job_id} resulted in an empty full_response. Nothing saved to assistant message history.")
+
+        # 5. Send final message to client to indicate end of streaming
         await publish_result_chunk(
             redis_conn, 
             job_id, 
@@ -250,7 +248,7 @@ async def handle_pending_jobs():
         for job in pending_jobs:
             msg_id = job["message_id"]
             consumer = job["consumer"]
-            idle_time = job["idle"]
+            idle_time = job.get("idle", 0)  # Use .get() with a default value of 0
             
             # If job has been idle for more than 30 seconds, claim it
             if idle_time > 30000:  # 30 seconds in milliseconds

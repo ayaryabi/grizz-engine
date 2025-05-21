@@ -29,6 +29,10 @@ logger = logging.getLogger("launcher")
 worker_processes: List[subprocess.Popen] = []
 web_process = None
 
+# Ensure logs directory exists
+LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="Launch API server and workers")
@@ -49,21 +53,23 @@ def start_web_server() -> subprocess.Popen:
     cmd = [
         sys.executable, "-m", "uvicorn", 
         "main:app", 
-        "--host", "0.0.0.0",
+        "--host", "0.0.0.0", # Listen on all interfaces
         "--port", "8000",
         "--log-level", "info",
     ]
     
+    # Log file for web server
+    web_log_file = os.path.join(LOGS_DIR, "web_server.log")
+    logger.info(f"Web server output will be logged to: {web_log_file}")
+    
     # Start process
-    process = subprocess.Popen(
-        cmd,
-        env=env,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,  # Line buffered
-    )
+    with open(web_log_file, 'wb') as log_file:
+        process = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=log_file,
+            stderr=log_file,
+        )
     
     logger.info(f"Web server started with PID {process.pid}")
     return process
@@ -78,30 +84,22 @@ def start_worker(worker_id: int) -> subprocess.Popen:
     cmd = [
         sys.executable, "-m", "app.workers.llm_worker"
     ]
+
+    # Log file for worker
+    worker_log_file = os.path.join(LOGS_DIR, f"worker_{worker_id}.log")
+    logger.info(f"Worker {worker_id} output will be logged to: {worker_log_file}")
     
     # Start process
-    process = subprocess.Popen(
-        cmd,
-        env=env,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,  # Line buffered
-    )
+    with open(worker_log_file, 'wb') as log_file:
+        process = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=log_file,
+            stderr=log_file,
+        )
     
     logger.info(f"Worker {worker_id} started with PID {process.pid}")
     return process
-
-def handle_output(process: subprocess.Popen, prefix: str):
-    """Handle process output in a non-blocking way"""
-    if process.stdout:
-        while True:
-            line = process.stdout.readline()
-            if not line:
-                break
-            sys.stdout.write(f"{prefix}: {line}")
-            sys.stdout.flush()
 
 def cleanup(sig=None, frame=None):
     """Clean up all processes on exit"""
@@ -111,18 +109,26 @@ def cleanup(sig=None, frame=None):
     if web_process:
         try:
             web_process.terminate()
+            web_process.wait(timeout=5) # Wait for termination
             logger.info(f"Terminated web server (PID {web_process.pid})")
-        except:
-            pass
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Web server (PID {web_process.pid}) did not terminate in time, killing.")
+            web_process.kill()
+        except Exception as e:
+            logger.error(f"Error terminating web server: {e}")
     
     # Clean up worker processes
     for i, proc in enumerate(worker_processes):
         try:
             proc.terminate()
+            proc.wait(timeout=5) # Wait for termination
             logger.info(f"Terminated worker {i} (PID {proc.pid})")
-        except:
-            pass
-    
+        except subprocess.TimeoutExpired:
+            logger.warning(f"Worker {i} (PID {proc.pid}) did not terminate in time, killing.")
+            proc.kill()
+        except Exception as e:
+            logger.error(f"Error terminating worker {i}: {e}")
+            
     logger.info("All processes terminated")
     sys.exit(0)
 
@@ -144,14 +150,10 @@ async def monitor_processes():
                 logger.info(f"Restarting worker {i}...")
                 worker_processes[i] = start_worker(i)
         
-        # Handle output from processes
-        if web_process:
-            handle_output(web_process, "WEB")
-        for i, proc in enumerate(worker_processes):
-            handle_output(proc, f"WORKER-{i}")
+        # Output is now redirected to files, so handle_output calls are removed
         
         # Sleep before checking again
-        await asyncio.sleep(1)
+        await asyncio.sleep(5) # Check every 5 seconds
 
 def main():
     """Main entry point"""
@@ -167,18 +169,21 @@ def main():
     
     # Start worker processes
     global worker_processes
+    worker_processes.clear() # Clear any old processes if main is called again (e.g. in tests)
     for i in range(args.workers):
         worker = start_worker(i)
         worker_processes.append(worker)
     
     # Print summary
     logger.info(f"Started web server (PID {web_process.pid}) and {len(worker_processes)} workers")
+    logger.info(f"Logs are being written to the directory: {LOGS_DIR}")
     
     try:
         # Monitor processes
         asyncio.run(monitor_processes())
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
+    finally: # Ensure cleanup runs on any exit from asyncio.run
         cleanup()
 
 if __name__ == "__main__":
