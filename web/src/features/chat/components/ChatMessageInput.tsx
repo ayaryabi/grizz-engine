@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { ArrowUp, Paperclip, X, FileIcon, ImageIcon } from "lucide-react";
 import { useAuth } from '@/features/auth/AuthContext';
 
+import { FileAttachment } from '@/lib/types';
+
 interface ChatMessageInputProps {
-  onSendMessage: (messageText: string, fileUrls?: string[]) => void;
+  onSendMessage: (messageText: string, files?: FileAttachment[]) => void;
   isLoading?: boolean;
   disabled?: boolean;
 }
@@ -22,7 +24,6 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
   const { user } = useAuth();
   const [inputText, setInputText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,7 +79,7 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
     }
   };
 
-  const handleSend = async () => {
+  const handleSend = () => {
     const trimmedInput = inputText.trim();
     if (!trimmedInput && selectedFiles.length === 0) return;
 
@@ -87,40 +88,33 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
       return;
     }
 
-    setIsUploading(true);
-    try {
-      let fileUrls: string[] = [];
+    // Create FileAttachment objects for optimistic display
+    const fileAttachments: FileAttachment[] = selectedFiles.map(fp => ({
+      id: fp.id,
+      file: fp.file,
+      name: fp.file.name,
+      size: fp.file.size,
+      type: fp.file.type,
+      uploading: true
+    }));
 
-      // Upload files if any are selected
-      if (selectedFiles.length > 0) {
-        const { uploadToSupabase } = await import('@/lib/supabase/storage');
-        const uploadPromises = selectedFiles.map(fp => uploadToSupabase(fp.file, user.id));
-        fileUrls = await Promise.all(uploadPromises);
-        console.log('Files uploaded successfully:', fileUrls);
-      }
-
-      onSendMessage(trimmedInput, fileUrls.length > 0 ? fileUrls : undefined);
-      
-      // Clear input and files
-      setInputText("");
-      setSelectedFiles(prev => {
-        // Clean up object URLs
-        prev.forEach(fp => {
-          if (fp.preview) {
-            URL.revokeObjectURL(fp.preview);
-          }
-        });
-        return [];
+    // Send message immediately for optimistic UI
+    onSendMessage(trimmedInput, fileAttachments.length > 0 ? fileAttachments : undefined);
+    
+    // Clear input and files
+    setInputText("");
+    setSelectedFiles(prev => {
+      // Clean up object URLs
+      prev.forEach(fp => {
+        if (fp.preview) {
+          URL.revokeObjectURL(fp.preview);
+        }
       });
-      
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
-    } catch (error) {
-      console.error('Send message error:', error);
-      alert('Failed to send message. Please try again.');
-    } finally {
-      setIsUploading(false);
+      return [];
+    });
+    
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
     }
   };
 
@@ -198,7 +192,7 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
       {/* File previews */}
       {selectedFiles.length > 0 && (
         <div className="mb-3 space-y-2">
-          <p className="text-xs text-muted-foreground font-medium">Files to upload:</p>
+          <p className="text-xs text-muted-foreground font-medium">Files to upload ({selectedFiles.length}):</p>
           <div className="flex flex-wrap gap-2">
             {selectedFiles.map((filePreview) => (
               <div key={filePreview.id} className="flex items-center gap-2 bg-muted px-3 py-2 rounded-lg border">
@@ -239,8 +233,8 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
                      border-none focus:ring-0 focus:outline-none focus-visible:ring-0 
                      py-2.5 px-3 min-h-[24px] max-h-[120px] placeholder:text-muted-foreground/80"
           rows={1}
-          disabled={isLoading || disabled || isUploading}
-          placeholder={isLoading ? "Waiting for response..." : isUploading ? "Uploading files..." : "Type your message..."}
+                  disabled={isLoading || disabled}
+        placeholder={isLoading ? "Waiting for response..." : "Type your message..."}
         />
         
         {/* File upload button */}
@@ -249,7 +243,7 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
           size="icon" 
           className="shrink-0 w-9 h-9 sm:w-10 sm:h-10 mr-1 mb-0.5 self-end"
           onClick={() => fileInputRef.current?.click()}
-          disabled={isLoading || disabled || isUploading}
+          disabled={isLoading || disabled}
           aria-label="Upload file"
         >
           <Paperclip className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -261,7 +255,7 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
           size="icon" 
           className="shrink-0 rounded-full w-9 h-9 sm:w-10 sm:h-10 mr-1 mb-0.5 self-end"
           onClick={handleSend}
-          disabled={(!inputText.trim() && selectedFiles.length === 0) || isLoading || disabled || isUploading}
+          disabled={(!inputText.trim() && selectedFiles.length === 0) || isLoading || disabled}
           aria-label="Send message"
         >
           <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />

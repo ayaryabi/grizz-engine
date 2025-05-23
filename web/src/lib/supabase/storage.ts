@@ -12,17 +12,9 @@ export async function uploadToSupabase(file: File, userId: string): Promise<stri
     throw new Error('User not authenticated for file upload');
   }
   
-  console.log('Upload attempt:', {
-    providedUserId: userId,
-    authUserId: user.id,
-    userIdMatch: userId === user.id
-  });
-
   const timestamp = Date.now();
   const fileName = `${timestamp}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
   const filePath = `${userId}/${fileName}`;
-  
-  console.log('Upload path:', filePath);
 
   const { data, error } = await supabase.storage
     .from('chat-files')
@@ -35,9 +27,14 @@ export async function uploadToSupabase(file: File, userId: string): Promise<stri
     throw new Error(`Upload failed: ${error.message}`);
   }
 
-  const { data: urlData } = supabase.storage
+  // Since our bucket is private, we need to create a signed URL
+  const { data: urlData, error: urlError } = await supabase.storage
     .from('chat-files')
-    .getPublicUrl(filePath);
+    .createSignedUrl(filePath, 60 * 60 * 24 * 7); // 7 days expiry
 
-  return urlData.publicUrl;
+  if (urlError) {
+    throw new Error(`Failed to create signed URL: ${urlError.message}`);
+  }
+
+  return urlData.signedUrl;
 }

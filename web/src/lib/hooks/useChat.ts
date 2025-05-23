@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Message } from '@/lib/types';
+import { Message, FileAttachment } from '@/lib/types';
 import { useAuth } from '@/features/auth/AuthContext';
 
 type UseChatProps = {
@@ -10,7 +10,7 @@ type UseChatProps = {
 type UseChatReturn = {
   messages: Message[];
   isConnected: boolean;
-  sendMessage: (text: string, fileUrls?: string[]) => void;
+  sendMessage: (text: string, files?: FileAttachment[]) => void;
   loading: boolean;
 };
 
@@ -172,18 +172,66 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     };
   }, [conversationId, session?.access_token, session]);
 
-  const sendMessage = (text: string, fileUrls?: string[]) => {
+  const sendMessage = async (text: string, files?: FileAttachment[]) => {
     // Reset the current message ID so a new AI message will be created
     currentMessageIdRef.current = null;
     
-    // Add user message immediately
+    // Add user message immediately with files for optimistic display
     const newUserMessage: Message = {
       id: uuidv4(),
       text,
       sender: 'user',
       timestamp: new Date().toISOString(),
+      files: files || []
     };
     setMessages((prev) => [...prev, newUserMessage]);
+
+    // Upload files in background if any
+    let fileUrls: string[] = [];
+    if (files && files.length > 0 && session?.user?.id) {
+      try {
+        const { uploadToSupabase } = await import('@/lib/supabase/storage');
+        const uploadPromises = files.map(file => 
+          file.file ? uploadToSupabase(file.file, session.user.id) : Promise.resolve('')
+        );
+        fileUrls = await Promise.all(uploadPromises);
+        console.log('Files uploaded successfully:', fileUrls);
+        
+        // Update the message with uploaded URLs and remove uploading state
+        setMessages((prev) => 
+          prev.map(msg => 
+            msg.id === newUserMessage.id 
+              ? {
+                  ...msg,
+                  files: files.map((file, index) => ({
+                    ...file,
+                    url: fileUrls[index],
+                    uploading: false,
+                    file: undefined // Remove File object after upload
+                  }))
+                }
+              : msg
+          )
+        );
+      } catch (error) {
+        console.error('File upload error:', error);
+        // Update message to show upload failed
+        setMessages((prev) => 
+          prev.map(msg => 
+            msg.id === newUserMessage.id 
+              ? {
+                  ...msg,
+                  files: files.map(file => ({
+                    ...file,
+                    uploading: false,
+                    url: undefined // Mark as failed
+                  }))
+                }
+              : msg
+          )
+        );
+      }
+    }
 
     // Send to backend via WebSocket
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
