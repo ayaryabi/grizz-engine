@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { ArrowUp, Paperclip, X, FileIcon, ImageIcon } from "lucide-react";
+import { ArrowUp, Paperclip, X, FileIcon } from "lucide-react";
 import { useAuth } from '@/features/auth/AuthContext';
 
 import { FileAttachment } from '@/lib/types';

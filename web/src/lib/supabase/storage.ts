@@ -16,7 +16,7 @@ export async function uploadToSupabase(file: File, userId: string): Promise<stri
   const fileName = `${timestamp}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
   const filePath = `${userId}/${fileName}`;
 
-  const { data, error } = await supabase.storage
+  const { error } = await supabase.storage
     .from('chat-files')
     .upload(filePath, file, {
       cacheControl: '3600',
@@ -30,7 +30,7 @@ export async function uploadToSupabase(file: File, userId: string): Promise<stri
   // Since our bucket is private, we need to create a signed URL
   const { data: urlData, error: urlError } = await supabase.storage
     .from('chat-files')
-    .createSignedUrl(filePath, 60 * 60 * 24 * 7); // 7 days expiry
+    .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year expiry
 
   if (urlError) {
     throw new Error(`Failed to create signed URL: ${urlError.message}`);

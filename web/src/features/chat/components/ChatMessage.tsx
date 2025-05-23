@@ -8,7 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from '@/components/ui/CodeBlock';
 import Image from 'next/image';
-import { FileIcon, ImageIcon, Loader2, ExternalLink } from 'lucide-react';
+import { FileIcon, Loader2, ExternalLink } from 'lucide-react';
 
 interface CodeProps {
   inline?: boolean;
