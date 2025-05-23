@@ -82,10 +82,12 @@ async def process_chat_job(
         metadata_str = job_data.get("metadata", "{}")
         metadata = json.loads(metadata_str)
         client_id = metadata.get("client_id", "unknown-client")
+        file_urls = metadata.get("file_urls", [])
     except json.JSONDecodeError:
         logger.error(f"Invalid metadata JSON for job {job_id}")
         metadata = {}
         client_id = "unknown-client"
+        file_urls = []
     
     logger.info(f"Processing chat job {job_id} for conversation {conversation_id}")
     
@@ -104,9 +106,11 @@ async def process_chat_job(
         
         # 2. Build the prompt for the LLM
         build_prompt_start_time = loop.time()
-        messages_for_llm = build_prompt(context, message)
+        messages_for_llm = build_prompt(context, message, file_urls)
         build_prompt_duration = loop.time() - build_prompt_start_time
         logger.info(f"Job {job_id}: Built prompt in {build_prompt_duration:.4f}s")
+        if file_urls:
+            logger.info(f"Job {job_id}: Processing {len(file_urls)} file(s)")
         
         # 3. Stream response from OpenAI and publish chunks
         openai_call_start_time = loop.time()

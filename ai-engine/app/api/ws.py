@@ -3,6 +3,7 @@ import logging
 import json # For sending simple JSON responses like errors
 import uuid
 import asyncio
+import json
 import time
 from urllib.parse import parse_qs # Import to parse query parameters
 from app.core.auth import validate_jwt_token
@@ -98,21 +99,35 @@ async def websocket_chat_endpoint(
             try:
                 while True:
                     logger.debug("Waiting for message...")
-                    user_message = await websocket.receive_text()
+                    message_data = await websocket.receive_text()
                     
                     # Update last activity time when message is received
                     last_activity_time = time.time()
                     
+                    # Parse JSON if present, otherwise treat as plain text
+                    try:
+                        parsed_data = json.loads(message_data)
+                        user_message = parsed_data.get('text', '')
+                        file_urls = parsed_data.get('file_urls', [])
+                    except (json.JSONDecodeError, TypeError):
+                        user_message = message_data
+                        file_urls = []
+                    
                     logger.info(f"Received message from user {authed_user_id}: {user_message[:100]}...")  # Log first 100 chars
+                    if file_urls:
+                        logger.info(f"With {len(file_urls)} file(s): {[url.split('/')[-1] for url in file_urls]}")  # Log filenames
                     
                     # 1. Save user message to DB
                     try:
+                        # Save file_urls in metadata if present
+                        message_metadata = {"file_urls": file_urls} if file_urls else {}
+                        
                         user_msg = Message(
                             conversation_id=uuid.UUID(conversation_id),
                             user_id=authed_user_id,
                             role="user",
                             content=user_message,
-                            message_metadata={}
+                            message_metadata=message_metadata
                         )
                         db.add(user_msg)
                         await db.commit()
@@ -125,11 +140,15 @@ async def websocket_chat_endpoint(
                     
                     # 2. Queue the chat message for processing
                     try:
+                        # Add file_urls to metadata if present
+                        metadata = {"file_urls": file_urls} if file_urls else None
+                        
                         job_id = await queue_chat_message(
                             user_id=authed_user_id,
                             conversation_id=conversation_id,
                             message=user_message,
-                            client_id=client_id
+                            client_id=client_id,
+                            metadata=metadata
                         )
                         
                         logger.info(f"Queued job {job_id} for conversation {conversation_id}")

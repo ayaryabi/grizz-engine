@@ -26,7 +26,7 @@ async def stream_chat_completion(messages: list[dict]) -> AsyncGenerator[str, No
     try:
         # Create a task with timeout protection
         response = await client.chat.completions.create(
-            model="gpt-4.1-nano-2025-04-14",
+            model="gpt-4.1-2025-04-14",
             messages=messages,
             stream=True,
             timeout=30.0,  # Override the default timeout for this specific call
