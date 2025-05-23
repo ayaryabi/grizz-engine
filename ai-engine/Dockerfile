@@ -23,5 +23,5 @@ ENV HOST="0.0.0.0" \
 # Make scripts executable
 RUN chmod +x /app/launcher.py /app/app/workers/llm_worker.py
 
-# Run launcher script with 2 workers by default
-CMD ["/app/.venv/bin/python", "launcher.py", "--workers", "2"]
+# New CMD for debugging: run launcher, and if it exits, print web_server.log
+CMD sh -c "/app/.venv/bin/python launcher.py --workers 2 ; echo 'Launcher exited. Contents of web_server.log:'; cat /app/logs/web_server.log || echo 'web_server.log not found or cat failed'"

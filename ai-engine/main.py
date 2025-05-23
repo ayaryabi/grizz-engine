@@ -6,7 +6,7 @@ from app.api.ws import router as ws_router
 from app.api.conversation import router as conversation_router
 from app.core.config import get_settings
 from app.db.database import engine, async_session_maker
-from app.core.redis_client import get_redis_pool, close_redis_pool, schedule_maintenance
+from app.core.redis_client import get_redis_pool, close_redis_pool, run_maintenance_task
 from app.db import models
 import uvicorn
 import logging
@@ -39,7 +39,7 @@ async def init_db():
     logger.info("Redis connection pool initialized")
     
     # Start maintenance task
-    app.state.maintenance_task = asyncio.create_task(schedule_maintenance())
+    app.state.maintenance_task = asyncio.create_task(run_maintenance_task())
     logger.info("Redis maintenance task started")
 
 # Clean up resources on shutdown

@@ -41,9 +41,10 @@ elif SQLALCHEMY_DATABASE_URL.startswith("postgresql+asyncpg:"):
         "ssl": "require",
         "server_settings": {
             "application_name": "grizz_app"
-        }
+        },
+        "statement_cache_size": 0  # Disable statement caching for PgBouncer compatibility
     })
-    logger.info("Using Supabase session pooler with SSL mode: require")
+    logger.info("Using Supabase session pooler with SSL mode: require and statement_cache_size=0")
     # Prepared statements are fine with session pooler mode
 
 logger.info(f"Connecting to database with URL: {safe_url}")

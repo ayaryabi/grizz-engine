@@ -135,11 +135,18 @@ def cleanup(sig=None, frame=None):
 async def monitor_processes():
     """Monitor processes and restart them if they exit unexpectedly"""
     global web_process, worker_processes
+    web_server_restart_count = 0
+    MAX_WEB_SERVER_RESTARTS = 5 # Max times to restart web server before giving up
     
     while True:
         # Check web server
         if web_process and web_process.poll() is not None:
-            logger.warning(f"Web server (PID {web_process.pid}) exited with code {web_process.returncode}")
+            logger.warning(f"Web server (PID {web_process.pid}) exited with code {web_process.returncode}. This was restart attempt #{web_server_restart_count + 1}.")
+            web_server_restart_count += 1
+            if web_server_restart_count > MAX_WEB_SERVER_RESTARTS:
+                logger.error(f"Web server has restarted {web_server_restart_count} times. Giving up.")
+                # This will cause launcher.py to exit with an error, allowing Docker CMD to proceed
+                raise RuntimeError(f"Web server failed to stay up after {web_server_restart_count} restarts.")
             logger.info("Restarting web server...")
             web_process = start_web_server()
         
@@ -183,6 +190,11 @@ def main():
         asyncio.run(monitor_processes())
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
+    except RuntimeError as e:
+        logger.error(f"Runtime error in monitor_processes: {e}")
+        # Attempt to dump logs before exiting with error, but cleanup might not run fully here.
+        # The Docker CMD is our main hope for log dumping.
+        sys.exit(1) # Exit with error code
     finally: # Ensure cleanup runs on any exit from asyncio.run
         cleanup()
 
