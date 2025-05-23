@@ -10,7 +10,7 @@ type UseChatProps = {
 type UseChatReturn = {
   messages: Message[];
   isConnected: boolean;
-  sendMessage: (text: string) => void;
+  sendMessage: (text: string, fileUrls?: string[]) => void;
   loading: boolean;
 };
 
@@ -172,7 +172,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     };
   }, [conversationId, session?.access_token, session]);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = (text: string, fileUrls?: string[]) => {
     // Reset the current message ID so a new AI message will be created
     currentMessageIdRef.current = null;
     
@@ -187,8 +187,18 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
 
     // Send to backend via WebSocket
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log("Sending message via WebSocket:", text.substring(0, 50) + "...");
-      wsRef.current.send(text);
+      // Send as JSON if we have file URLs, otherwise send as plain text
+      if (fileUrls && fileUrls.length > 0) {
+        const messageData = {
+          text,
+          file_urls: fileUrls
+        };
+        console.log("Sending message with files via WebSocket:", messageData);
+        wsRef.current.send(JSON.stringify(messageData));
+      } else {
+        console.log("Sending message via WebSocket:", text.substring(0, 50) + "...");
+        wsRef.current.send(text);
+      }
     } else {
       console.error("Cannot send message - WebSocket not connected. State:", wsRef.current?.readyState);
     }
