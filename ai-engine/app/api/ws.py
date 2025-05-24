@@ -5,6 +5,8 @@ import uuid
 import asyncio
 import json
 import time
+import sentry_sdk
+from app.core.sentry_context import set_user_context, set_message_context, set_database_context
 from urllib.parse import parse_qs # Import to parse query parameters
 from app.core.auth import validate_jwt_token
 from app.db.database import get_async_db, async_session_maker
@@ -52,6 +54,8 @@ async def websocket_chat_endpoint(
         try:
             authed_user_id = validate_jwt_token(token)
             logger.info(f"Token validation successful for user: {authed_user_id}")
+            # Set user context for Sentry
+            set_user_context(user_id=authed_user_id, conversation_id=conversation_id)
         except HTTPException as auth_exc:
             logger.error(f"WebSocket authentication failed: {auth_exc.detail}")
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -116,6 +120,9 @@ async def websocket_chat_endpoint(
                 if file_urls:
                     logger.info(f"With {len(file_urls)} file(s): {[url.split('/')[-1] for url in file_urls]}")  # Log filenames
                 
+                # Set message context for Sentry debugging
+                set_message_context(message_content=user_message)
+                
                 # 1. Save user message to DB with fresh session
                 try:
                     # Save file_urls in metadata if present
@@ -136,6 +143,9 @@ async def websocket_chat_endpoint(
                         logger.info(f"Saved user message for conversation: {conversation_id}")
                 except Exception as db_error:
                     logger.error(f"Error saving user message: {str(db_error)}", exc_info=True)
+                    # Capture database error in Sentry with context
+                    set_database_context("save_user_message", session_id=str(id(db)), duration_ms=None)
+                    sentry_sdk.capture_exception(db_error)
                     await websocket.send_text("\n\n[Error: Could not save your message. Please try again.]")
                     continue
                 

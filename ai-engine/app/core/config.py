@@ -20,6 +20,9 @@ class Settings(BaseModel):
     SUPABASE_JWT_SECRET: str = os.getenv("SUPABASE_JWT_SECRET", "")
     NEXT_PUBLIC_SUPABASE_URL: str = os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
     NEXT_PUBLIC_SUPABASE_ANON_KEY: str = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+    
+    # Monitoring
+    SENTRY_DSN: str = os.getenv("SENTRY_DSN", "")
 
 @lru_cache()
 def get_settings() -> Settings:

@@ -12,12 +12,20 @@ import uvicorn
 import logging
 import os
 import asyncio
+import sentry_sdk
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+# Initialize Sentry (using official simple setup)
+sentry_sdk.init(
+    dsn="https://86d503031aff237c9646856178db3679@o4509350294061056.ingest.de.sentry.io/4509351137968208",
+    send_default_pii=True,  # Include request headers and IP for debugging
+)
+logger.info("Sentry monitoring initialized")
 
 # Create FastAPI app with proper concurrency settings
 app = FastAPI(
@@ -97,6 +105,11 @@ async def root():
     # This is the endpoint used by Fly.io for health checks
     # Keep it super lightweight to ensure it never blocks
     return {"message": "Grizz Chat API is running"}
+
+@app.get("/sentry-debug")
+async def trigger_error():
+    """Test endpoint to verify Sentry is working"""
+    division_by_zero = 1 / 0
 
 # This is only used when running the script directly (not through the Dockerfile)
 if __name__ == "__main__":

@@ -21,6 +21,8 @@ from typing import Dict, Any, List, Optional
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import redis.asyncio as redis
+import sentry_sdk
+from app.core.sentry_context import set_user_context, set_redis_context, set_database_context, detect_race_condition_issues
 from app.core.redis_client import (
     get_redis_pool, 
     close_redis_pool, 
@@ -90,6 +92,10 @@ async def process_chat_job(
         file_urls = []
     
     logger.info(f"Processing chat job {job_id} for conversation {conversation_id}")
+    
+    # Set Sentry context for this job
+    set_user_context(user_id=user_id, conversation_id=conversation_id)
+    set_redis_context(stream_key=client_id, operation="process_job")
     
     # Create database session
     db = async_session_maker()
@@ -190,6 +196,9 @@ async def process_chat_job(
             await db.commit()
             db_save_duration = loop.time() - db_save_start_time
             logger.info(f"Job {job_id}: Saved full response to DB in {db_save_duration:.4f}s")
+            
+            # 5. RACE CONDITION DETECTION: Check if response seems to lack context
+            detect_race_condition_issues(conversation_id, message, context, full_response)
         else:
             logger.info(f"Job {job_id}: No content generated. Nothing to save to DB.")
         
@@ -199,8 +208,10 @@ async def process_chat_job(
         
     except Exception as e:
         logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
+        # Capture error in Sentry with context
+        sentry_sdk.capture_exception(e)
         # Publish an error chunk to the client
-        error_message_for_client = f"[Error: Sorry, an unexpected error occurred while processing your request. Job ID: {job_id}]"
+        error_message_for_client = f"[Error: Sorry, an unexpected error occurred while processing your reque st. Job ID: {job_id}]"
         await publish_result_chunk(
             redis_conn,
             job_id,

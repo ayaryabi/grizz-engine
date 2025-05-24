@@ -20,6 +20,8 @@ if SQLALCHEMY_DATABASE_URL.startswith("postgresql:"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
     logger.info("Converted database URL to use asyncpg")
 
+# Note: statement_cache_size=0 is set in connect_args below for better reliability
+
 # Log connection details safely (without password)
 safe_url = SQLALCHEMY_DATABASE_URL
 if '@' in safe_url:
@@ -58,6 +60,10 @@ engine = create_async_engine(
     pool_size=10,            # Can use larger pool with session mode
     max_overflow=5,          # Allow some overflow for peak loads
     echo=True,               # Log SQL queries (set to False in production)
+    # CRITICAL: Force disable all prepared statement caching at engine level
+    execution_options={
+        "compiled_cache": None,  # Disable SQLAlchemy's compiled statement cache
+    }
 )
 
 # Create async session factory
