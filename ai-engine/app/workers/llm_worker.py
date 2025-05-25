@@ -129,6 +129,10 @@ async def process_chat_job(
         from openai.types.responses import ResponseTextDeltaEvent
         
         # Use run_streamed for proper streaming
+        # conversation_input is now either a List[dict] for multimodal or str for text-only
+        if file_urls and len(file_urls) > 0:
+            logger.info(f"Job {job_id}: Sending multimodal input with {len(file_urls)} image(s) to Agent SDK")
+        
         streamed_result = Runner.run_streamed(chat_agent.agent, conversation_input)
         
         async def agent_chunks_iterator():

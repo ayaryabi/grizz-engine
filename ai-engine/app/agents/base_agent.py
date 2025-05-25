@@ -32,6 +32,32 @@ class BaseGrizzAgent:
         result = await Runner.run(self.agent, user_input)
         return result.final_output
     
+    def _format_conversation_for_agent_streaming(self, context_messages: List, user_message: str, file_urls: Optional[List[str]] = None):
+        """Format conversation for Agent SDK streaming with proper multimodal support"""
+        # Based on GitHub issue #159: https://github.com/openai/openai-agents-python/issues/159
+        # Agent SDK expects input in specific format for multimodal
+        
+        if file_urls and len(file_urls) > 0:
+            # Multimodal message - use Agent SDK format
+            content_parts = [
+                {"type": "input_text", "text": user_message}
+            ]
+            
+            # Add each image
+            for url in file_urls:
+                content_parts.append({
+                    "type": "input_image", 
+                    "image_url": url
+                })
+            
+            return [{
+                "role": "user",
+                "content": content_parts
+            }]
+        else:
+            # Text-only message
+            return user_message
+
     async def process_multimodal(self, user_input: str, images: List[str] = None):
         """🎯 Handle text + images from day 1"""
         if images:

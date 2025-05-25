@@ -39,28 +39,6 @@ To summarize **your identity**: You are Grizz – the user's lovable bear friend
         )
     
 
-    
-
-    
-    def _format_conversation_for_agent_streaming(self, context_messages: List, user_message: str, file_urls: Optional[List[str]] = None) -> str:
-        """Format conversation for Agent SDK streaming (simpler than full context processing)"""
-        # Build conversation history
-        conversation_parts = []
-        
-        # Add context messages (simplified for streaming)
-        for msg in context_messages:
-            role = getattr(msg, 'role', 'user')
-            content = getattr(msg, 'content', str(msg))
-            conversation_parts.append(f"{role.title()}: {content}")
-        
-        # Add current message
-        if file_urls and len(file_urls) > 0:
-            conversation_parts.append(f"User: {user_message} [Note: User has shared {len(file_urls)} image(s)]")
-        else:
-            conversation_parts.append(f"User: {user_message}")
-        
-        return "\n\n".join(conversation_parts)
-
 
 # Global chat agent instance (ready for use)
 chat_agent = ChatAgent()
