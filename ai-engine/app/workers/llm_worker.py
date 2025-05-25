@@ -32,7 +32,8 @@ from app.core.redis_client import (
     safe_redis_operation
 )
 from app.core.queue import move_to_dead_letter, publish_result_chunk
-from app.llm.openai_client import AsyncOpenAI, stream_chat_completion
+# Removed unused import: from app.llm.openai_client import AsyncOpenAI
+from app.llm.llm_manager import llm_manager
 from app.services.memory_service import fetch_recent_messages
 from app.agents.chat_agent import build_prompt
 from app.db.database import get_async_db, async_session_maker
@@ -118,9 +119,9 @@ async def process_chat_job(
         if file_urls:
             logger.info(f"Job {job_id}: Processing {len(file_urls)} file(s)")
         
-        # 3. Stream response from OpenAI and publish chunks
+        # 3. Stream response via LLM manager and publish chunks
         openai_call_start_time = loop.time()
-        chunks_iterator = stream_chat_completion(messages_for_llm)
+        chunks_iterator = llm_manager.stream_chat(messages_for_llm, "chat")
         
         previous_chunk = None
         has_sent_chunks = False

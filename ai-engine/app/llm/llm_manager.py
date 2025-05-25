@@ -23,7 +23,7 @@ class MultiLLMManager:
         # Specialized LLM configurations (Co-Sight + SDK pattern)
         self.llm_configs = {
             "chat": {
-                "model": "gpt-4o",  # Default chat model
+                "model": "gpt-4.1-mini",  # Fast and efficient chat model
                 "temperature": 0.7,
                 "max_tokens": 4000
             },
