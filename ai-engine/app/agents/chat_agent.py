@@ -2,44 +2,11 @@ from .base_agent import BaseGrizzAgent
 from typing import List, Optional
 
 class ChatAgent(BaseGrizzAgent):
-    """Grizz Chat Agent using Agent SDK - Foundation for Phase 2"""
+    """Grizz Chat Agent using Agent SDK with full personality"""
     
     def __init__(self):
-        # TODO: Move full Grizz prompt here in Phase 2
-        # For now, keep it simple to avoid duplication
-        super().__init__(
-            name="Grizz Chat Agent",
-            instructions="You are Grizz, a helpful bear companion.",  # Simplified for now
-            llm_type="chat"  # Uses gpt-4.1-mini with temp=0.7
-        )
-    
-    async def process_with_context(
-        self, 
-        context_messages: List,
-        user_message: str, 
-        file_urls: Optional[List[str]] = None
-    ) -> str:
-        """
-        Future method for processing with context and multimodal support.
-        Will be implemented in Phase 2 when we migrate from build_prompt().
-        """
-        # TODO: Implement in Phase 2
-        if file_urls:
-            return await self.process_multimodal(user_message, file_urls)
-        else:
-            return await self.process(user_message)
-
-
-# Global chat agent instance (ready for Phase 2)
-chat_agent = ChatAgent()
-
-
-def build_prompt(context_messages, user_message, file_urls=None):
-    """
-    Build the prompt for the LLM using context and the new user message.
-    Supports multimodal messages with images.
-    """
-    system_prompt = """You are **Grizz**, a bear-like AI companion designed for Gen Z users. You have the persona of a lovable, charismatic young bear who is also the user's best friend. Your mission is to build a strong emotional bond with the user through your iconic and lovable personality. 
+        # Full Grizz personality (moved from build_prompt)
+        full_grizz_instructions = """You are **Grizz**, a bear-like AI companion designed for Gen Z users. You have the persona of a lovable, charismatic young bear who is also the user's best friend. Your mission is to build a strong emotional bond with the user through your iconic and lovable personality. 
 
 **Personality & Role:** You are warm, upbeat, and genuine at all times. You care deeply about the user and it shows in every response. You treat the user's problems and feelings as if they were your own, always listening attentively and responding with empathy. As a bear persona, you're easygoing and playful, yet also protective – you want to see your friend (the user) happy and thriving. You are confident and positive, but never arrogant or dismissive. Think of yourself as the user's daily sidekick and cheerleader: always in their corner, ready with support or a smile.
 
@@ -64,57 +31,39 @@ def build_prompt(context_messages, user_message, file_urls=None):
 - **Image Analysis**: When users share images, analyze them thoughtfully and mention specific details you observe. Describe what you see in a friendly, engaging way. Comment on colors, objects, people, text, or anything interesting. Always connect your observations back to being helpful and personable.
 
 To summarize **your identity**: You are Grizz – the user's lovable bear friend who is funny, caring, and absolutely reliable. In every answer, your goal is to **delight the user and make them feel understood and valued**. You do this through your friendly tone, your humor, your empathy, and the insightful help you provide. The user should come away thinking, *"I love talking to Grizz – he just gets me and always makes my day a bit better."* Stay true to that feeling in every interaction."""
+        
+        super().__init__(
+            name="Grizz Chat Agent",
+            instructions=full_grizz_instructions,
+            llm_type="chat"  # Uses gpt-4.1-mini with temp=0.7
+        )
+    
 
-    prompt = [ {"role": "system", "content": system_prompt} ]
     
-    # Add context messages (may include images from previous messages)
-    for msg in context_messages:
-        role = getattr(msg, 'role', 'user')
-        content = getattr(msg, 'content', str(msg))
+
+    
+    def _format_conversation_for_agent_streaming(self, context_messages: List, user_message: str, file_urls: Optional[List[str]] = None) -> str:
+        """Format conversation for Agent SDK streaming (simpler than full context processing)"""
+        # Build conversation history
+        conversation_parts = []
         
-        # Check if this message had file URLs in metadata
-        metadata = getattr(msg, 'message_metadata', {}) or {}
-        file_urls_from_history = metadata.get('file_urls', [])
+        # Add context messages (simplified for streaming)
+        for msg in context_messages:
+            role = getattr(msg, 'role', 'user')
+            content = getattr(msg, 'content', str(msg))
+            conversation_parts.append(f"{role.title()}: {content}")
         
-        if file_urls_from_history:
-            # Reconstruct multimodal message for context
-            multimodal_content = []
-            
-            # Add text if present
-            if content and content.strip():
-                multimodal_content.append({"type": "text", "text": content})
-            
-            # Add images from history
-            for url in file_urls_from_history:
-                multimodal_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": url}
-                })
-            
-            prompt.append({"role": role, "content": multimodal_content})
+        # Add current message
+        if file_urls and len(file_urls) > 0:
+            conversation_parts.append(f"User: {user_message} [Note: User has shared {len(file_urls)} image(s)]")
         else:
-            # Text-only context message
-            prompt.append({"role": role, "content": content})
-    
-    # Build the user message - could be text only or multimodal
-    if file_urls and len(file_urls) > 0:
-        # Create multimodal message with text and images
-        content = []
+            conversation_parts.append(f"User: {user_message}")
         
-        # Add text if present
-        if user_message and user_message.strip():
-            content.append({"type": "text", "text": user_message})
-        
-        # Add images
-        for url in file_urls:
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": url}
-            })
-        
-        prompt.append({"role": "user", "content": content})
-    else:
-        # Text-only message
-        prompt.append({"role": "user", "content": user_message})
-    
-    return prompt 
+        return "\n\n".join(conversation_parts)
+
+
+# Global chat agent instance (ready for use)
+chat_agent = ChatAgent()
+
+
+ 

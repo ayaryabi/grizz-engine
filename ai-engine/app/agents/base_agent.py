@@ -10,8 +10,9 @@ class BaseGrizzAgent:
                  llm_type: str = "chat", output_type = None):
         
         # 🎯 Different agents use different LLMs (Co-Sight pattern)
+        # Must match LLM manager models for consistency
         model_map = {
-            "chat": "gpt-4o",
+            "chat": "gpt-4.1-mini",  # Match llm_manager chat config
             "planning": "gpt-4o", 
             "execution": "gpt-4o-mini",
             "vision": "gpt-4o"  # Multimodal ready

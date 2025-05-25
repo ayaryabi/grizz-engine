@@ -22,24 +22,22 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 import redis.asyncio as redis
 import sentry_sdk
-from app.core.sentry_context import set_user_context, set_redis_context, set_database_context, detect_race_condition_issues
+from app.core.sentry_context import set_user_context, set_redis_context, detect_race_condition_issues
 from app.core.redis_client import (
     get_redis_pool, 
     close_redis_pool, 
     LLM_JOBS_STREAM, 
-    RESULT_STREAM, 
-    LLM_JOBS_DEAD,
     safe_redis_operation
 )
 from app.core.queue import move_to_dead_letter, publish_result_chunk
-# Removed unused import: from app.llm.openai_client import AsyncOpenAI
-from app.llm.llm_manager import llm_manager
+# Agent SDK imports for streaming
+from agents import Runner
+from openai.types.responses import ResponseTextDeltaEvent
+
 from app.services.memory_service import fetch_recent_messages
-from app.agents.chat_agent import build_prompt
-from app.db.database import get_async_db, async_session_maker
-from app.core.config import get_settings
+from app.agents.chat_agent import chat_agent
+from app.db.database import async_session_maker
 from app.db.models import Message
-from sqlalchemy import insert, update
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -111,17 +109,35 @@ async def process_chat_job(
         db_fetch_duration = loop.time() - db_fetch_start_time
         logger.info(f"Job {job_id}: Fetched context in {db_fetch_duration:.4f}s")
         
-        # 2. Build the prompt for the LLM (Agent SDK ready for Phase 2)
-        build_prompt_start_time = loop.time()
-        messages_for_llm = build_prompt(context, message, file_urls)
-        build_prompt_duration = loop.time() - build_prompt_start_time
-        logger.info(f"Job {job_id}: Built prompt in {build_prompt_duration:.4f}s")
+        # 2. Prepare input with context for Agent SDK
+        agent_processing_start_time = loop.time()
         if file_urls:
             logger.info(f"Job {job_id}: Processing {len(file_urls)} file(s)")
         
-        # 3. Stream response via LLM manager and publish chunks
+        # Format conversation context for Agent SDK
+        # Agent SDK will handle this better than manual prompt building
+        conversation_input = chat_agent._format_conversation_for_agent_streaming(context, message, file_urls)
+        
+        agent_processing_duration = loop.time() - agent_processing_start_time
+        logger.info(f"Job {job_id}: Prepared Agent SDK input in {agent_processing_duration:.4f}s")
+        
+        # 3. Stream response via Agent SDK using run_streamed
         openai_call_start_time = loop.time()
-        chunks_iterator = llm_manager.stream_chat(messages_for_llm, "chat")
+        
+        # Proper Agent SDK streaming approach
+        from agents import Runner
+        from openai.types.responses import ResponseTextDeltaEvent
+        
+        # Use run_streamed for proper streaming
+        streamed_result = Runner.run_streamed(chat_agent.agent, conversation_input)
+        
+        async def agent_chunks_iterator():
+            """Convert Agent SDK streaming events to text chunks"""
+            async for event in streamed_result.stream_events():
+                if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                    yield event.data.delta
+        
+        chunks_iterator = agent_chunks_iterator()
         
         previous_chunk = None
         has_sent_chunks = False
@@ -251,7 +267,7 @@ async def worker_loop():
                 # No new messages, try again
                 continue
                 
-            stream_name, messages = streams[0]
+            _, messages = streams[0]
             
             if not messages:
                 # No new messages, try again
@@ -395,7 +411,7 @@ async def handle_pending_jobs():
 
 def handle_signals():
     """Set up signal handlers for graceful shutdown"""
-    def signal_handler(signum, frame):
+    def signal_handler(signum, _):
         logger.info(f"Received signal {signum}, initiating shutdown")
         shutdown_event.set()
     
