@@ -1,6 +1,6 @@
 from app.db.models import Message
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select
+from sqlalchemy import select
 import logging
 import asyncio
 

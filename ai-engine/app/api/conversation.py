@@ -5,7 +5,7 @@ import pytz
 from sqlalchemy import select
 import logging
 
-from app.db.database import get_async_db, async_session_maker
+from app.db.database import async_session_maker
 from app.db.models import Conversation
 from app.core.auth import get_current_user_id_from_token
 

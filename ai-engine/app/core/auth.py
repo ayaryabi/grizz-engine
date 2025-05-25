@@ -1,6 +1,6 @@
 import jwt # PyJWT library
 from fastapi import Depends, HTTPException, status, Query, Request
-from starlette.datastructures import QueryParams
+
 from datetime import datetime, timezone # timezone added for UTC
 import logging
 from typing import Optional

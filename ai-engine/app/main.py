@@ -1,4 +1,4 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from app.api.ws import router as ws_router
@@ -45,7 +45,7 @@ class ChatMessage(BaseModel):
     message: str
 
 @app.post("/chat")
-async def chat(message: ChatMessage, background_tasks: BackgroundTasks):
+async def chat(message: ChatMessage):
     # For now, just echo back the message
     # Later we'll integrate with actual AI processing
     return {

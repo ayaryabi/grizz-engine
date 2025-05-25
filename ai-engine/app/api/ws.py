@@ -9,9 +9,8 @@ import sentry_sdk
 from app.core.sentry_context import set_user_context, set_message_context, set_database_context
 from urllib.parse import parse_qs # Import to parse query parameters
 from app.core.auth import validate_jwt_token
-from app.db.database import get_async_db, async_session_maker
+from app.db.database import async_session_maker
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert
 from starlette.websockets import WebSocketState
 from app.db.models import Message
 from app.services.queue_service import queue_chat_message, listen_for_job_results
