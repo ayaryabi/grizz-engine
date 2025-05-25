@@ -1,3 +1,39 @@
+from .base_agent import BaseGrizzAgent
+from typing import List, Optional
+
+class ChatAgent(BaseGrizzAgent):
+    """Grizz Chat Agent using Agent SDK - Foundation for Phase 2"""
+    
+    def __init__(self):
+        # TODO: Move full Grizz prompt here in Phase 2
+        # For now, keep it simple to avoid duplication
+        super().__init__(
+            name="Grizz Chat Agent",
+            instructions="You are Grizz, a helpful bear companion.",  # Simplified for now
+            llm_type="chat"  # Uses gpt-4.1-mini with temp=0.7
+        )
+    
+    async def process_with_context(
+        self, 
+        context_messages: List,
+        user_message: str, 
+        file_urls: Optional[List[str]] = None
+    ) -> str:
+        """
+        Future method for processing with context and multimodal support.
+        Will be implemented in Phase 2 when we migrate from build_prompt().
+        """
+        # TODO: Implement in Phase 2
+        if file_urls:
+            return await self.process_multimodal(user_message, file_urls)
+        else:
+            return await self.process(user_message)
+
+
+# Global chat agent instance (ready for Phase 2)
+chat_agent = ChatAgent()
+
+
 def build_prompt(context_messages, user_message, file_urls=None):
     """
     Build the prompt for the LLM using context and the new user message.

@@ -111,7 +111,7 @@ async def process_chat_job(
         db_fetch_duration = loop.time() - db_fetch_start_time
         logger.info(f"Job {job_id}: Fetched context in {db_fetch_duration:.4f}s")
         
-        # 2. Build the prompt for the LLM
+        # 2. Build the prompt for the LLM (Agent SDK ready for Phase 2)
         build_prompt_start_time = loop.time()
         messages_for_llm = build_prompt(context, message, file_urls)
         build_prompt_duration = loop.time() - build_prompt_start_time

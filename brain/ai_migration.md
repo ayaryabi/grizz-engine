@@ -3,14 +3,15 @@
 ## Overview
 Migrate Grizz Engine from direct OpenAI calls to OpenAI Agents SDK, then implement the **Memory System** with planner-actor agents for saving and organizing user information.
 
-**Timeline:** ~4-6 hours total (incremental, testable phases)
+**Timeline:** ~5-7 hours total (incremental, testable phases)
 
 ---
 
 ## What We're Building
 
-**Goal:** Transform current simple chat into intelligent memory-aware system:
+**Goal:** Transform current simple chat into intelligent memory-aware system with multimodal support:
 
+0. **Phase 0:** Multimodal LLM Manager Foundation (30 min)
 1. **Phase 1:** Basic Agent SDK migration (30-60 min)
 2. **Phase 2:** Agent architecture + Pydantic models (45 min)  
 3. **Phase 3:** Simple Memory Agent (45 min)
@@ -41,7 +42,9 @@ ai-engine/
 │   │   └── agents.py             # Agent coordination models
 │   ├── agents/                    # Agent implementations
 │   │   ├── __init__.py
-│   │   ├── main_chat_agent.py    # 🎯 MAIN agent with memory tool
+│   │   ├── base_agent.py         # 🎯 Common agent functionality
+│   │   ├── main_chat_agent.py    # 🎯 MAIN agent with memory + vision tools
+│   │   ├── vision_agent.py       # 🎯 Multimodal vision specialist (NEW)
 │   │   └── memory/               # Memory System (internal)
 │   │       ├── __init__.py
 │   │       ├── planner_agent.py  # Plans memory tasks
@@ -50,9 +53,13 @@ ai-engine/
 │   ├── tools/                    # Shared tool ecosystem
 │   │   ├── __init__.py
 │   │   ├── memory_tools.py       # Save to Postgres
+│   │   ├── vision_tools.py       # 🎯 Image analysis tools (NEW)
 │   │   ├── tagging_tools.py      # Auto-categorization
 │   │   └── markdown_tools.py     # MD conversion
-│   ├── llm/                      # Current LLM clients
+│   ├── llm/                      # Enhanced LLM management
+│   │   ├── __init__.py
+│   │   ├── openai_client.py      # Current implementation (backward compatible)
+│   │   └── llm_manager.py        # 🎯 Multi-LLM manager (NEW)
 │   └── workers/                  # Current workers
 ```
 
@@ -73,14 +80,45 @@ ai-engine/
 
 ---
 
+## Phase 0: Multimodal LLM Manager Foundation
+**Time:** 30 minutes
+
+**Goal:** Create SDK-compatible multi-LLM architecture with multimodal support from day 1, inspired by Co-Sight's proven pattern.
+
+### What We're Building
+1. **Install OpenAI Agents SDK**: `pip install openai-agents`
+2. **Multi-LLM Manager** (`app/llm/llm_manager.py`): 
+   - Specialized configs: chat, planning, execution, vision
+   - Uses `gpt-4o` for multimodal, `gpt-4o-mini` for fast execution
+   - Backward compatible with existing `stream_chat_completion()`
+3. **Base Agent Infrastructure** (`app/agents/base_agent.py`):
+   - `BaseGrizzAgent` class with SDK integration
+   - `process_multimodal()` method for text + images
+   - Different LLM types for different agent purposes
+
+### Benefits Achieved
+- **🎯 Multimodal Foundation**: Ready for images/vision from day 1
+- **🚀 Performance Options**: Different models for different tasks
+- **🔄 Backward Compatible**: Existing code continues working
+- **📊 Co-Sight Proven Pattern**: Based on production-tested architecture
+
+### Test
+- Verify new files load without errors
+- Confirm existing `stream_chat_completion()` still works
+- Test multimodal capability with image URL
+
+---
+
 ## Phase 1: Basic Agent SDK Migration
 **Time:** 30-60 minutes
 
+**Goal:** Start using the Agent SDK with the new multi-LLM manager while maintaining identical chat experience.
+
 ### What Changes
-- **File:** `ai-engine/app/llm/openai_client.py`
-- **Action:** Replace `stream_chat_completion()` with Agent SDK version
 - **File:** `ai-engine/app/workers/llm_worker.py` 
-- **Action:** Update import (one line change)
+- **Action:** Update to use new `llm_manager.stream_chat()` instead of direct `stream_chat_completion()`
+- **File:** `ai-engine/app/agents/chat_agent.py` (if exists)
+- **Action:** Migrate to use `BaseGrizzAgent` pattern
 
 ### What Stays Same
 - WebSocket layer - zero changes
