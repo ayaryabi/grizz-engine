@@ -1,3 +1,4 @@
+from agents import Runner
 from .planner_agent import MemoryPlannerAgent
 from .actor_agent import MemoryActorAgent
 from ..base_agent import BaseGrizzAgent
@@ -42,7 +43,7 @@ class MemoryManager(BaseGrizzAgent):
             print(f"   📄 Content length: {len(content)} chars")
             print(f"   🏷️  Type: {item_type}")
             
-            # Step 1: Create execution plan
+            # Step 1: Create execution plan using the planner agent
             print(f"\n🧠 Creating execution plan...")
             plan = await self.planner.create_plan(user_request, item_type)
             
@@ -50,7 +51,7 @@ class MemoryManager(BaseGrizzAgent):
             print(f"📋 Plan ID: {plan.plan_id}")
             print(f"🔧 Steps: {len(plan.steps)}")
             
-            # Step 2: Execute the plan
+            # Step 2: Execute the plan using the actor agent
             print(f"\n⚡ Executing plan...")
             execution_result = await self.actor.execute_plan(
                 plan=plan,

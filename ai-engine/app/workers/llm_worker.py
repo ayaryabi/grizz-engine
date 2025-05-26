@@ -133,7 +133,7 @@ async def process_chat_job(
         if file_urls and len(file_urls) > 0:
             logger.info(f"Job {job_id}: Sending multimodal input with {len(file_urls)} image(s) to Agent SDK")
         
-        streamed_result = Runner.run_streamed(chat_agent.agent, conversation_input)
+        streamed_result = Runner.run_streamed(chat_agent, conversation_input)
         
         async def agent_chunks_iterator():
             """Convert Agent SDK streaming events to text chunks"""

@@ -1,3 +1,4 @@
+from agents import Runner
 from ..agents.base_agent import BaseGrizzAgent
 from ..models.tools import MarkdownFormatInput, MarkdownFormatOutput
 
@@ -39,7 +40,9 @@ class MarkdownFormatter(BaseGrizzAgent):
         """
         
         try:
-            formatted_content = await self.process(user_prompt)
+            # Use Runner.run() for proper Agent SDK tracing
+            result = await Runner.run(self, user_prompt)
+            formatted_content = result.final_output
             
             return MarkdownFormatOutput(
                 formatted_content=formatted_content.strip(),

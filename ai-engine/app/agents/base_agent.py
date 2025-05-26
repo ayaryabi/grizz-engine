@@ -2,7 +2,7 @@ from agents import Agent, Runner
 from typing import List, Optional
 
 
-class BaseGrizzAgent:
+class BaseGrizzAgent(Agent):
     """Common functionality for all Grizz agents using OpenAI Agent SDK"""
     
     def __init__(self, name: str, instructions: str, tools: List = None, 
@@ -17,7 +17,8 @@ class BaseGrizzAgent:
             "vision": "gpt-4o"           # Multimodal
         }
         
-        self.agent = Agent(
+        # Initialize the parent Agent class directly
+        super().__init__(
             name=name,
             model=model_map.get(llm_type, "gpt-4o"),
             instructions=instructions,
@@ -28,7 +29,7 @@ class BaseGrizzAgent:
     
     async def process(self, user_input: str):
         """Regular text processing via Agent SDK"""
-        result = await Runner.run(self.agent, user_input)
+        result = await Runner.run(self, user_input)
         return result.final_output
     
     def _format_conversation_for_agent_streaming(self, context_messages: List, user_message: str, file_urls: Optional[List[str]] = None):

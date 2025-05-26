@@ -1,3 +1,4 @@
+from agents import Runner
 from ..agents.base_agent import BaseGrizzAgent
 from ..models.tools import CategorizationInput, CategorizationOutput
 from typing import Dict, Any
@@ -66,7 +67,9 @@ class CategorizationAgent(BaseGrizzAgent):
         """
         
         try:
-            response = await self.process(user_prompt)
+            # Use Runner.run() for proper Agent SDK tracing
+            result = await Runner.run(self, user_prompt)
+            response = result.final_output
             
             # Try to parse JSON response
             if isinstance(response, str):

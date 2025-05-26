@@ -1,4 +1,5 @@
 import uuid
+from agents import Runner
 from ...agents.base_agent import BaseGrizzAgent
 from ...models.agents import MemoryPlan, PlanStep
 from typing import Dict, Any
@@ -16,123 +17,110 @@ class MemoryPlannerAgent(BaseGrizzAgent):
             Available tools and their exact names:
             1. "markdown_formatter_tool" - Format content into clean markdown
             2. "categorization_tool" - Categorize content and extract properties  
-            3. "save_memory_tool" - Save the final formatted and categorized content
+            3. "save_memory_tool" - Save formatted content to database
             
-            IMPORTANT: You must create a plan with these EXACT steps in order:
-            1. First: format_markdown (use markdown_formatter_tool)
-            2. Second: categorize (use categorization_tool) 
-            3. Third: save_memory (use save_memory_tool)
+            You must create a plan with exactly 3 steps in this order:
+            1. Step 1: Use "markdown_formatter_tool" with action "format_markdown"
+            2. Step 2: Use "categorization_tool" with action "categorize" (depends on step 1)
+            3. Step 3: Use "save_memory_tool" with action "save_memory" (depends on step 2)
             
-            Each step must depend on the previous one. Always follow this sequence.
-            
-            People might give you:
-            - YouTube video transcripts
-            - Meeting transcripts
-            - Articles
-            - Notes
-            - Case studies
-            - Any text content
-            
-            Your job is to plan the right tools to use for processing their content.
-            
-            Always return a structured JSON plan in this format:
+            Return your plan in this exact JSON format:
             {
                 "plan_id": "unique_id",
-                "user_request": "original_request",
-                "summary": "plan_summary",
+                "user_request": "original_user_request",
+                "summary": "Format, categorize, and save user content",
                 "estimated_time": 30,
                 "steps": [
                     {
                         "step_id": "step_1",
-                        "action": "format_markdown",
+                        "description": "Format content as clean markdown",
                         "tool_name": "markdown_formatter_tool",
-                        "parameters": {"content": "content", "item_type": "type"},
-                        "dependencies": [],
-                        "description": "Format content as markdown"
+                        "action": "format_markdown",
+                        "parameters": {"item_type": "user_provided_type"},
+                        "dependencies": []
+                    },
+                    {
+                        "step_id": "step_2", 
+                        "description": "Categorize content and extract properties",
+                        "tool_name": "categorization_tool",
+                        "action": "categorize",
+                        "parameters": {"item_type": "user_provided_type"},
+                        "dependencies": ["step_1"]
+                    },
+                    {
+                        "step_id": "step_3",
+                        "description": "Save content to memory database", 
+                        "tool_name": "save_memory_tool",
+                        "action": "save_memory",
+                        "parameters": {"item_type": "user_provided_type"},
+                        "dependencies": ["step_2"]
                     }
                 ]
             }
             """,
-            llm_type="planning"
-            # Removed output_type to avoid strict JSON schema issues
+            llm_type="planning"  # Use smart planning model
         )
     
     async def create_plan(self, user_request: str, item_type: str = "unknown") -> MemoryPlan:
-        """Create a structured plan for memory operations"""
-        
-        user_prompt = f"""
-        Create a plan for this request:
-        User request: {user_request}
-        Content type: {item_type}
-        
-        Return a structured plan with 3 steps: format_markdown, categorize, save_memory
-        """
+        """Create a structured execution plan"""
         
         try:
-            # Use Agent SDK with structured output
-            result = await self.process(user_prompt)
+            # Use Runner.run() to get proper Agent SDK tracing
+            prompt = f"""
+            Create an execution plan for this user request: "{user_request}"
+            Content type: {item_type}
             
-            # If Agent SDK returns a MemoryPlan object directly, use it
-            if isinstance(result, MemoryPlan):
-                return result
+            Return only the JSON plan, no other text.
+            """
             
-            # Otherwise, try to parse as JSON
-            if isinstance(result, str):
-                plan_data = json.loads(result)
-                steps = [
-                    PlanStep(
-                        step_id=step["step_id"],
-                        action=step["action"],
-                        tool_name=step["tool_name"],
-                        parameters=step["parameters"],
-                        dependencies=step["dependencies"],
-                        description=step["description"]
-                    )
-                    for step in plan_data["steps"]
-                ]
-                
-                return MemoryPlan(
-                    plan_id=plan_data["plan_id"],
-                    user_request=plan_data["user_request"],
-                    steps=steps,
-                    estimated_time=plan_data["estimated_time"],
-                    summary=plan_data["summary"]
-                )
+            result = await Runner.run(self, prompt)
+            plan_json = result.final_output
+            
+            # Parse and validate the plan
+            plan_data = json.loads(plan_json)
+            steps = [PlanStep(**step) for step in plan_data["steps"]]
+            
+            return MemoryPlan(
+                plan_id=plan_data["plan_id"],
+                user_request=plan_data["user_request"],
+                summary=plan_data["summary"],
+                estimated_time=plan_data["estimated_time"],
+                steps=steps
+            )
             
         except Exception as e:
-            print(f"Planner failed with Agent SDK, using fallback: {e}")
-            
-        # Fallback plan if Agent SDK fails
-        plan_id = str(uuid.uuid4())[:8]
-        return MemoryPlan(
-            plan_id=plan_id,
-            user_request=user_request,
-            summary="Simple fallback plan",
-            estimated_time=30,
-            steps=[
-                PlanStep(
-                    step_id="step_1",
-                    action="format_markdown",
-                    tool_name="markdown_formatter_tool",
-                    parameters={"content": "content", "item_type": item_type},
-                    dependencies=[],
-                    description="Format content as markdown"
-                ),
-                PlanStep(
-                    step_id="step_2", 
-                    action="categorize",
-                    tool_name="categorization_tool",
-                    parameters={"content": "content", "item_type": item_type, "existing_categories": []},
-                    dependencies=["step_1"],
-                    description="Categorize content"
-                ),
-                PlanStep(
-                    step_id="step_3",
-                    action="save_memory",
-                    tool_name="save_memory_tool", 
-                    parameters={"title": "Untitled", "content": "content", "item_type": item_type, "category": "general", "properties": {}},
-                    dependencies=["step_2"],
-                    description="Save to memory"
-                )
-            ]
-        ) 
+            print(f"⚠️ Planner failed: {str(e)}, using fallback")
+            # Fallback plan if AI fails - include ALL required fields
+            fallback_id = str(uuid.uuid4())[:8]
+            return MemoryPlan(
+                plan_id=fallback_id,
+                user_request=user_request,  # Add missing field
+                summary="Simple fallback plan",
+                estimated_time=30,  # Add missing field
+                steps=[
+                    PlanStep(
+                        step_id="step_1",
+                        description="Format content as markdown",
+                        tool_name="markdown_formatter_tool",
+                        action="format_markdown", 
+                        parameters={"item_type": item_type},
+                        dependencies=[]
+                    ),
+                    PlanStep(
+                        step_id="step_2",
+                        description="Categorize and extract properties",
+                        tool_name="categorization_tool",
+                        action="categorize",
+                        parameters={"item_type": item_type},
+                        dependencies=["step_1"]
+                    ),
+                    PlanStep(
+                        step_id="step_3", 
+                        description="Save to memory database",
+                        tool_name="save_memory_tool",
+                        action="save_memory",
+                        parameters={"item_type": item_type},
+                        dependencies=["step_2"]
+                    )
+                ]
+            ) 

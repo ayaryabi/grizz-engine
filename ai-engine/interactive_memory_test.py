@@ -43,11 +43,11 @@ class InteractiveMemoryAgent:
     def print_banner(self):
         """Print welcome banner"""
         print("\n" + "="*60)
-        print("🧠 GRIZZ MEMORY SYSTEM - INTERACTIVE TEST AGENT")
+        print("🧠 GRIZZ MEMORY SYSTEM - SIMPLE TEST")
         print("="*60)
-        print("🎯 Test different content types and see detailed logs")
+        print("🎯 Just paste your content and hit Enter!")
         print("📋 Commands:")
-        print("   • Type your request normally: 'save this tutorial'")
+        print("   • Paste any content: it gets saved automatically")
         print("   • 'help' - Show examples")
         print("   • 'stats' - Show session statistics") 
         print("   • 'quit' - Exit")
@@ -91,39 +91,9 @@ class InteractiveMemoryAgent:
         
         self.log("INPUT", f"Request #{self.session_count}: {user_input}")
         
-        # Get content from user
-        print("\n📄 Please paste your content (press Enter twice when done):")
-        content_lines = []
-        empty_count = 0
-        
-        while empty_count < 2:
-            try:
-                line = input()
-                if line.strip() == "":
-                    empty_count += 1
-                else:
-                    empty_count = 0
-                content_lines.append(line)
-            except KeyboardInterrupt:
-                print("\n🛑 Content input cancelled")
-                return
-        
-        content = "\n".join(content_lines).strip()
-        
-        if not content:
-            self.log("ERROR", "No content provided")
-            return
-            
-        # Get content type
-        print("\n🏷️  Content type (youtube_video/meeting/article/note/other): ", end="")
-        try:
-            item_type = input().strip() or "other"
-        except KeyboardInterrupt:
-            print("\n🛑 Request cancelled")
-            return
-            
-        # Generate title from content preview
-        content_preview = content[:100] + "..." if len(content) > 100 else content
+        # Use the user input as content - simple!
+        content = user_input
+        item_type = "note"  # Default type
         title = f"User Content #{self.session_count}"
         
         self.log("STEP", f"Processing content type: {item_type}")
