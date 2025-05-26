@@ -8,7 +8,7 @@ class PlanStep(BaseModel):
         description="Exact action type - must be one of these"
     )
     tool_name: str = Field(description="Exact tool function name to call")
-    parameters: Dict[str, Any] = Field(description="Parameters to pass to the tool")
+    parameters: str = Field(description="JSON string of parameters to pass to the tool")
     dependencies: List[str] = Field(default_factory=list, description="Step IDs that must complete first")
     description: str = Field(description="Human readable description of this step")
 

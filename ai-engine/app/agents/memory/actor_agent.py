@@ -1,11 +1,14 @@
 from agents import Agent, function_tool
 from ...models.tools import MarkdownFormatInput, CategorizationInput
 from ...models.memory import SaveMemoryInput
+from ...models.agents import MemoryPlan, PlanStep
 from ...tools.markdown_tools import markdown_formatter_tool
 from ...tools.categorization_tools import categorization_tool
 from ...tools.memory_tools import save_memory_tool
-from typing import Dict, Any
+from typing import Dict, Any, List
 from pydantic import BaseModel
+import asyncio
+import json
 
 # Simple function tools that only use basic types
 @function_tool
@@ -46,24 +49,148 @@ async def save_content_tool(title: str, content: str, category: str, item_type: 
     result = await save_memory_tool(input_data)
     return f"{result.title}|{result.id}"
 
+@function_tool
+async def execute_memory_plan(plan_json: str, content: str, title: str, item_type: str = "unknown") -> str:
+    """Execute a structured memory plan with dependency resolution and parallelization"""
+    
+    try:
+        # Parse the plan
+        plan_data = json.loads(plan_json)
+        plan = MemoryPlan(**plan_data)
+        
+        print(f"🎯 Executing Memory Plan: {plan.summary}")
+        print(f"📋 Total steps: {len(plan.steps)}")
+        
+        # Track step results and completion
+        step_results = {}
+        completed_steps = set()
+        
+        # Build dependency graph
+        def get_ready_steps() -> List[PlanStep]:
+            """Get steps that have all dependencies completed"""
+            ready = []
+            for step in plan.steps:
+                if step.step_id not in completed_steps:
+                    if all(dep_id in completed_steps for dep_id in step.dependencies):
+                        ready.append(step)
+            return ready
+        
+        # Execute step function
+        async def execute_step(step: PlanStep) -> str:
+            """Execute a single plan step"""
+            print(f"🔧 Executing Step {step.step_id}: {step.description}")
+            
+            if step.action == "format_markdown":
+                result = await format_content_tool(content, item_type)
+                step_results[step.step_id] = result
+                return result
+                
+            elif step.action == "categorize":
+                # Use formatted content if available, otherwise original
+                content_to_use = step_results.get("format_step", content)
+                result = await categorize_content_tool(content_to_use, item_type)
+                step_results[step.step_id] = result
+                return result
+                
+            elif step.action == "save_memory":
+                # Get required data from previous steps
+                formatted_content = step_results.get("format_step", content)
+                category_result = step_results.get("categorize_step", "general|{}")
+                category = category_result.split("|")[0]
+                
+                result = await save_content_tool(title, formatted_content, category, item_type)
+                step_results[step.step_id] = result
+                return result
+            
+            else:
+                raise ValueError(f"Unknown action: {step.action}")
+        
+        # Execute plan with dependency resolution
+        while len(completed_steps) < len(plan.steps):
+            ready_steps = get_ready_steps()
+            
+            if not ready_steps:
+                raise ValueError("Circular dependency or missing steps detected")
+            
+            # Group steps that can run in parallel (no dependencies between them)
+            parallel_groups = []
+            remaining_steps = ready_steps[:]
+            
+            while remaining_steps:
+                # Start a new parallel group
+                current_group = [remaining_steps.pop(0)]
+                
+                # Add more steps to this group if they don't depend on each other
+                i = 0
+                while i < len(remaining_steps):
+                    step = remaining_steps[i]
+                    # Check if this step can run with current group
+                    can_parallel = True
+                    for group_step in current_group:
+                        if (step.step_id in group_step.dependencies or 
+                            group_step.step_id in step.dependencies):
+                            can_parallel = False
+                            break
+                    
+                    if can_parallel:
+                        current_group.append(remaining_steps.pop(i))
+                    else:
+                        i += 1
+                
+                parallel_groups.append(current_group)
+            
+            # Execute parallel groups sequentially, but steps within groups in parallel
+            for group in parallel_groups:
+                if len(group) == 1:
+                    # Single step
+                    step = group[0]
+                    await execute_step(step)
+                    completed_steps.add(step.step_id)
+                    print(f"✅ Completed: {step.step_id}")
+                else:
+                    # Multiple steps in parallel
+                    print(f"⚡ Running {len(group)} steps in parallel...")
+                    tasks = [execute_step(step) for step in group]
+                    await asyncio.gather(*tasks)
+                    
+                    for step in group:
+                        completed_steps.add(step.step_id)
+                        print(f"✅ Completed: {step.step_id}")
+        
+        # Return final result
+        final_result = step_results.get("save_step", "No save step found")
+        print(f"🎉 Plan execution completed! Final result: {final_result}")
+        
+        return f"Plan executed successfully. {final_result}"
+        
+    except Exception as e:
+        error_msg = f"Plan execution failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        return error_msg
+
 # Pure Agent SDK agent for memory execution
 memory_actor_agent = Agent(
     name="Memory Actor Agent", 
     instructions="""
-    You are a memory actor agent that executes memory operations step by step.
+    You are a memory execution agent that executes memory plans step by step.
     
-    Available tools:
-    1. format_content_tool(content, item_type) - Format content as markdown, returns formatted string
-    2. categorize_content_tool(content, item_type) - Categorize content, returns "category|properties_json"
-    3. save_content_tool(title, content, category, item_type) - Save to database, returns "title|id"
+    When you receive a memory plan from the Memory Agent:
+    1. Follow the steps in the exact order provided
+    2. Use the individual tools for each step:
+       - format_content_tool: Format content as markdown
+       - categorize_content_tool: Categorize content (returns "category|properties_json")
+       - save_content_tool: Save to database (returns "title|id")
+    3. Pass results between steps as needed
+    4. Return a clear summary of what was accomplished
     
-    Follow this workflow:
-    1. Format the content using format_content_tool
-    2. Categorize the formatted content using categorize_content_tool  
-    3. Save the content using save_content_tool
+    DO NOT use execute_memory_plan - it has validation issues. Use individual tools instead.
     
-    Always execute steps in order and use the output from previous steps as input to the next.
-    Return the final title and ID from the save operation.
+    Step execution pattern:
+    1. Format: Call format_content_tool with the content
+    2. Categorize: Call categorize_content_tool with formatted content
+    3. Save: Call save_content_tool with title, formatted content, and category
+    
+    Always execute steps in dependency order and provide clear status updates.
     """,
     model="gpt-4o-mini",  # Fast execution model
     tools=[format_content_tool, categorize_content_tool, save_content_tool]

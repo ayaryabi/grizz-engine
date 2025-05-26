@@ -1,6 +1,7 @@
 from agents import Agent, Runner
 from .planner_agent import memory_planner_agent
 from .actor_agent import memory_actor_agent
+from ...models.agents import MemoryPlan
 from typing import Dict, Any
 import traceback
 
@@ -8,18 +9,26 @@ import traceback
 memory_agent = Agent(
     name="Memory Agent",
     instructions="""
-    You coordinate memory operations by delegating to specialists. You will receive a request with:
-    - User request (what they want to do)
-    - Content type (e.g., youtube_video, meeting, note)
-    - Content (the actual content to save)  
-    - Title (title for the content)
+    You are a memory planning coordinator. Analyze the user's memory request and create a structured execution plan.
     
-    Your workflow:
-    1. Hand off to the Memory Actor agent to execute the memory workflow and save content
+    Available tools for execution:
+    - format_content_tool: Format content as clean markdown
+    - categorize_content_tool: Categorize content and extract properties
+    - save_content_tool: Save formatted content to database
     
-    The Agent SDK automatically passes the full conversation context during handoffs.
-    After the handoff completes, provide a summary of the results to the user.
+    Create an optimal execution plan considering:
+    1. Dependencies: formatting must happen before categorization and saving
+    2. Parallelization: some steps can run simultaneously to improve performance
+    3. Tool parameters: specify exact parameters each tool needs
+    
+    Use these exact action types and tool names:
+    - action: "format_markdown", tool_name: "format_content_tool"
+    - action: "categorize", tool_name: "categorize_content_tool"  
+    - action: "save_memory", tool_name: "save_content_tool"
+    
+    After creating the structured plan, hand off to Memory Actor for execution.
     """,
+    output_type=MemoryPlan,  # ← RESTORED: We DO want structured planning
     handoffs=[memory_actor_agent],
     model="gpt-4o"
 )
@@ -57,41 +66,65 @@ class MemoryManager:
             print(f"   📄 Content length: {len(content)} chars")
             print(f"   🏷️  Type: {item_type}")
             
-            # Single Agent SDK call with handoffs for unified tracing
+            # STEP 1: Create structured plan using Memory Agent
             print(f"\n🧠 Creating execution plan...")
-            workflow_input = f"""
+            plan_input = f"""
             User request: {user_request}
             Content type: {item_type}
             Content: {content}
             Title: {title}
             
-            Please coordinate the memory workflow using handoffs to planner and actor agents.
+            Create a structured execution plan for this memory operation.
             """
             
-            result = await Runner.run(self.agent, workflow_input)
-            execution_result = result.final_output
+            plan_result = await Runner.run(self.agent, plan_input)
+            execution_plan = plan_result.final_output
+            
+            print(f"📋 Plan created: {execution_plan.plan_id}")
+            print(f"📝 Steps: {len(execution_plan.steps)}")
+            
+            # STEP 2: Execute plan using Memory Actor Agent  
+            print(f"\n⚡ Executing plan...")
+            execution_input = f"""
+            Execute this memory plan:
+            
+            Plan ID: {execution_plan.plan_id}
+            User Request: {execution_plan.user_request}
+            Content: {content}
+            Title: {title}
+            Type: {item_type}
+            
+            Steps to execute:
+            {chr(10).join([f"{i+1}. {step.action} - {step.description}" for i, step in enumerate(execution_plan.steps)])}
+            
+            Follow the steps in order and use the available tools.
+            """
+            
+            execution_result = await Runner.run(memory_actor_agent, execution_input)
+            final_result = execution_result.final_output
             
             print(f"✅ Execution completed!")
             
             # Parse the execution result to extract title and ID
             parsed_result = {
                 "success": True,
-                "execution_log": execution_result,
+                "plan": execution_plan.dict(),
+                "execution_log": final_result,
                 "title": title,
                 "id": None
             }
             
             # Try to extract ID from the result string
-            if "🆔 ID:" in execution_result:
-                lines = execution_result.split('\n')
+            if "🆔 ID:" in final_result:
+                lines = final_result.split('\n')
                 for line in lines:
                     if "🆔 ID:" in line:
                         parsed_result["id"] = line.split("🆔 ID:")[-1].strip()
                         break
             
             # Try to extract title from result if available
-            if "📝 Title:" in execution_result:
-                lines = execution_result.split('\n')
+            if "📝 Title:" in final_result:
+                lines = final_result.split('\n')
                 for line in lines:
                     if "📝 Title:" in line:
                         parsed_result["title"] = line.split("📝 Title:")[-1].strip()
