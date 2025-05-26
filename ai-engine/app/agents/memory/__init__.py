@@ -1,9 +1,9 @@
-from .planner_agent import MemoryPlannerAgent
-from .actor_agent import MemoryActorAgent
+from .planner_agent import memory_planner_agent
+from .actor_agent import memory_actor_agent
 from .memory_manager import MemoryManager
 
 __all__ = [
-    "MemoryPlannerAgent",
-    "MemoryActorAgent", 
+    "memory_planner_agent",
+    "memory_actor_agent", 
     "MemoryManager"
 ] 

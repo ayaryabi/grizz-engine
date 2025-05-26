@@ -1,21 +1,35 @@
-from agents import Runner
-from .planner_agent import MemoryPlannerAgent
-from .actor_agent import MemoryActorAgent
-from ..base_agent import BaseGrizzAgent
+from agents import Agent, Runner
+from .planner_agent import memory_planner_agent
+from .actor_agent import memory_actor_agent
 from typing import Dict, Any
 import traceback
 
-class MemoryManager(BaseGrizzAgent):
-    """Coordinates the memory planner and actor agents"""
+# Main Memory Agent using direct agent handoffs (no decorator needed)
+memory_agent = Agent(
+    name="Memory Agent",
+    instructions="""
+    You coordinate memory operations by delegating to specialists. You will receive a request with:
+    - User request (what they want to do)
+    - Content type (e.g., youtube_video, meeting, note)
+    - Content (the actual content to save)  
+    - Title (title for the content)
+    
+    Your workflow:
+    1. Hand off to the Memory Actor agent to execute the memory workflow and save content
+    
+    The Agent SDK automatically passes the full conversation context during handoffs.
+    After the handoff completes, provide a summary of the results to the user.
+    """,
+    handoffs=[memory_actor_agent],
+    model="gpt-4o"
+)
+
+class MemoryManager:
+    """Simple wrapper for the unified memory agent"""
     
     def __init__(self):
-        super().__init__(
-            name="Memory Manager",
-            instructions="Coordinate memory operations by managing planner and actor agents to save user content efficiently.",
-            llm_type="execution"  # Coordination doesn't need heavy reasoning
-        )
-        self.planner = MemoryPlannerAgent()
-        self.actor = MemoryActorAgent()
+        # Just store the agent reference
+        self.agent = memory_agent
     
     async def process_memory_request(
         self, 
@@ -25,7 +39,7 @@ class MemoryManager(BaseGrizzAgent):
         item_type: str = "unknown"
     ) -> Dict[str, Any]:
         """
-        Process a memory request through the planner-actor workflow
+        Process a memory request through the unified agent workflow
         
         Args:
             user_request: What the user wants to do
@@ -43,26 +57,24 @@ class MemoryManager(BaseGrizzAgent):
             print(f"   📄 Content length: {len(content)} chars")
             print(f"   🏷️  Type: {item_type}")
             
-            # Step 1: Create execution plan using the planner agent
+            # Single Agent SDK call with handoffs for unified tracing
             print(f"\n🧠 Creating execution plan...")
-            plan = await self.planner.create_plan(user_request, item_type)
+            workflow_input = f"""
+            User request: {user_request}
+            Content type: {item_type}
+            Content: {content}
+            Title: {title}
             
-            print(f"✅ Plan created: {plan.summary}")
-            print(f"📋 Plan ID: {plan.plan_id}")
-            print(f"🔧 Steps: {len(plan.steps)}")
+            Please coordinate the memory workflow using handoffs to planner and actor agents.
+            """
             
-            # Step 2: Execute the plan using the actor agent
-            print(f"\n⚡ Executing plan...")
-            execution_result = await self.actor.execute_plan(
-                plan=plan,
-                original_content=content,
-                original_title=title
-            )
+            result = await Runner.run(self.agent, workflow_input)
+            execution_result = result.final_output
             
             print(f"✅ Execution completed!")
             
             # Parse the execution result to extract title and ID
-            result = {
+            parsed_result = {
                 "success": True,
                 "execution_log": execution_result,
                 "title": title,
@@ -74,7 +86,7 @@ class MemoryManager(BaseGrizzAgent):
                 lines = execution_result.split('\n')
                 for line in lines:
                     if "🆔 ID:" in line:
-                        result["id"] = line.split("🆔 ID:")[-1].strip()
+                        parsed_result["id"] = line.split("🆔 ID:")[-1].strip()
                         break
             
             # Try to extract title from result if available
@@ -82,10 +94,10 @@ class MemoryManager(BaseGrizzAgent):
                 lines = execution_result.split('\n')
                 for line in lines:
                     if "📝 Title:" in line:
-                        result["title"] = line.split("📝 Title:")[-1].strip()
+                        parsed_result["title"] = line.split("📝 Title:")[-1].strip()
                         break
             
-            return result
+            return parsed_result
             
         except Exception as e:
             print(f"❌ Memory workflow failed with error: {str(e)}")

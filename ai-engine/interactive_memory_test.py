@@ -21,6 +21,68 @@ settings = get_settings()
 
 from app.agents.memory.memory_manager import MemoryManager
 
+# Import trace inspection
+from agents import TracingProcessor, Trace, add_trace_processor
+
+class MemoryTestTraceInspector(TracingProcessor):
+    """Capture and analyze traces from memory tests"""
+    
+    def __init__(self):
+        self.latest_trace = None
+        self.traces = {}
+        
+    def process_trace(self, trace: Trace) -> None:
+        """Store traces for inspection"""
+        self.latest_trace = trace
+        self.traces[trace.id] = trace
+        print(f"\n🔍 CAPTURED UNIFIED TRACE: {trace.id}")
+        self.print_trace_analysis(trace)
+    
+    def print_trace_analysis(self, trace: Trace):
+        """Print detailed analysis of the trace"""
+        print(f"   📊 Total Duration: {trace.duration}ms")
+        print(f"   🔧 Total Spans: {len(trace.spans)}")
+        
+        handoff_count = 0
+        agent_names = set()
+        
+        for i, span in enumerate(trace.spans, 1):
+            span_type = type(span.span_data).__name__
+            print(f"   📋 {i}. {span.name} ({span.duration}ms) [{span_type}]")
+            
+            # Check for handoffs
+            if "handoff" in span.name.lower() or "transfer" in span.name.lower():
+                handoff_count += 1
+                print(f"      🔄 HANDOFF DETECTED")
+            
+            # Extract agent names
+            if hasattr(span.span_data, 'agent_name'):
+                agent_names.add(span.span_data.agent_name)
+        
+        print(f"   🤖 Agents involved: {len(agent_names)}")
+        print(f"   🔄 Handoffs detected: {handoff_count}")
+        
+        if handoff_count > 0:
+            print(f"   ✅ UNIFIED HANDOFF WORKFLOW WORKING!")
+        else:
+            print(f"   ⚠️  No handoffs detected - might be single agent workflow")
+    
+    def get_latest_trace_id(self):
+        """Get the ID of the latest trace"""
+        return self.latest_trace.id if self.latest_trace else None
+    
+    # Required abstract methods
+    def on_span_start(self, span): pass
+    def on_span_end(self, span): pass  
+    def on_trace_start(self, trace): pass
+    def on_trace_end(self, trace): pass
+    def force_flush(self): pass
+    def shutdown(self): pass
+
+# Add trace inspector
+trace_inspector = MemoryTestTraceInspector()
+add_trace_processor(trace_inspector)
+
 class InteractiveMemoryAgent:
     def __init__(self):
         self.memory_manager = MemoryManager()
@@ -49,7 +111,8 @@ class InteractiveMemoryAgent:
         print("📋 Commands:")
         print("   • Paste any content: it gets saved automatically")
         print("   • 'help' - Show examples")
-        print("   • 'stats' - Show session statistics") 
+        print("   • 'stats' - Show session statistics")
+        print("   • 'trace' - Show latest trace analysis")
         print("   • 'quit' - Exit")
         print("="*60)
         
@@ -136,6 +199,17 @@ class InteractiveMemoryAgent:
         print(f"   🔢 Requests processed: {self.session_count}")
         print(f"   🔑 API Key status: {'✅ Loaded' if settings.OPENAI_API_KEY else '❌ Missing'}")
         print(f"   🕐 Session started: {datetime.now().strftime('%H:%M:%S')}")
+        print(f"   🔍 Traces captured: {len(trace_inspector.traces)}")
+    
+    def show_latest_trace(self):
+        """Show analysis of the latest trace"""
+        if trace_inspector.latest_trace:
+            print(f"\n🔍 LATEST TRACE ANALYSIS:")
+            print("="*50)
+            trace_inspector.print_trace_analysis(trace_inspector.latest_trace)
+            print("="*50)
+        else:
+            print(f"\n❌ No traces captured yet. Run a memory request first!")
     
     async def run(self):
         """Main interactive loop"""
@@ -151,7 +225,7 @@ class InteractiveMemoryAgent:
         
         while True:
             try:
-                print(f"\n💬 Enter your request (or 'help', 'stats', 'quit'):")
+                print(f"\n💬 Enter your request (or 'help', 'stats', 'trace', 'quit'):")
                 user_input = input("➤ ").strip()
                 
                 if not user_input:
@@ -166,6 +240,9 @@ class InteractiveMemoryAgent:
                     continue
                 elif user_input.lower() == 'stats':
                     self.show_stats()
+                    continue
+                elif user_input.lower() == 'trace':
+                    self.show_latest_trace()
                     continue
                 
                 # Process the request

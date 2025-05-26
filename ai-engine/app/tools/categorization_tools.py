@@ -73,7 +73,15 @@ class CategorizationAgent(BaseGrizzAgent):
             
             # Try to parse JSON response
             if isinstance(response, str):
-                response_data = json.loads(response)
+                # Strip any markdown code block formatting
+                response_clean = response.strip()
+                if response_clean.startswith("```json"):
+                    response_clean = response_clean[7:]
+                if response_clean.endswith("```"):
+                    response_clean = response_clean[:-3]
+                response_clean = response_clean.strip()
+                
+                response_data = json.loads(response_clean)
             else:
                 response_data = response
             
@@ -83,13 +91,21 @@ class CategorizationAgent(BaseGrizzAgent):
                 confidence=response_data.get("confidence", 0.5),
                 properties=response_data.get("properties", {})
             )
-        except Exception as e:
-            # Fallback to simple categorization
+        except json.JSONDecodeError as e:
+            # JSON parsing failed - return safe fallback
             return CategorizationOutput(
                 category="general",
                 is_new_category=False,
                 confidence=0.5,
-                properties={"error": f"Categorization failed: {str(e)}"}
+                properties={"subject": "uncategorized", "tags": [], "notes": "JSON parsing failed"}
+            )
+        except Exception as e:
+            # Other error - return safe fallback
+            return CategorizationOutput(
+                category="general",
+                is_new_category=False,
+                confidence=0.5,
+                properties={"subject": "uncategorized", "tags": [], "notes": f"Categorization error: {type(e).__name__}"}
             )
 
 # Create global instance
