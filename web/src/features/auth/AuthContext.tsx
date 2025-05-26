@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation'; // Import usePathname
 import { supabase } from '@/lib/supabase/supabase'; // Adjust path if needed
 import type { Session, User } from '@supabase/supabase-js';
@@ -39,6 +39,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isAuthReady, setIsAuthReady] = useState(false); // Tracks if initial session/auth check is complete
   const router = useRouter();
   const pathname = usePathname(); // Get current path
+  
+  // Ref to prevent concurrent profile fetches (fixes triple fetch bug)
+  const fetchingUserRef = useRef<string | null>(null);
 
   const fetchProfileData = useCallback(async (userId: string | undefined) => {
     if (!userId) {
@@ -46,13 +49,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsLoadingProfile(false);
       return;
     }
-    if (profile?.user_id === userId && !isLoadingProfile) {
-      // console.log(`AuthContext: Profile for user ${userId} already loaded and not loading. Skipping fetch.`);
+    
+    // Synchronous protection against concurrent fetches (fixes triple fetch bug)
+    if ((profile?.user_id === userId && !isLoadingProfile) || 
+        fetchingUserRef.current === userId) {
+      // console.log(`AuthContext: Profile for user ${userId} already loaded or being fetched. Skipping.`);
       return;
     }
     
+    // Immediately lock this user ID to prevent concurrent fetches
+    fetchingUserRef.current = userId;
     console.log(`AuthContext: Fetching profile for user: ${userId}`);
     setIsLoadingProfile(true);
+    
     try {
       const { data, error, status } = await supabase
         .from('profiles')
@@ -74,6 +83,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('AuthContext: Exception in fetchProfileData:', e);
       setProfile(null);
     } finally {
+      // Release the lock and loading state
+      fetchingUserRef.current = null;
       setIsLoadingProfile(false);
     }
   }, [profile?.user_id, isLoadingProfile]); // Added isLoadingProfile to dependencies

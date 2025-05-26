@@ -29,6 +29,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isActiveTabRef = useRef<boolean>(true);
   const shouldReconnectRef = useRef<boolean>(true);
+  const isConnectingRef = useRef<boolean>(false); // Prevent multiple simultaneous connections
   const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
   const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
 
@@ -40,7 +41,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       return;
     }
 
-    // Only fetch if we have an authenticated session
+    // Start fetching immediately when session is available (parallel loading optimization)
     if (!session?.access_token) {
       return;
     }
@@ -97,6 +98,15 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       return;
     }
 
+    // Prevent multiple simultaneous connection attempts
+    if (isConnectingRef.current) {
+      console.log('WebSocket connection already in progress, skipping...');
+      return;
+    }
+
+    // Set connecting flag
+    isConnectingRef.current = true;
+
     // Close existing connection if any
     if (wsRef.current) {
       wsRef.current.close();
@@ -137,6 +147,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       setIsConnected(true);
       setIsReconnecting(false);
       setReconnectAttempts(0);
+      isConnectingRef.current = false; // Clear connecting flag on success
       
       // Start heartbeat when connected and tab is active
       if (isActiveTabRef.current) {
@@ -148,6 +159,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       console.error(`WebSocket connection closed with code: ${event.code}, reason: ${event.reason}`);
       setIsConnected(false);
       currentMessageIdRef.current = null;
+      isConnectingRef.current = false; // Clear connecting flag on close
       stopPingInterval();
       
       // Attempt reconnection if we should reconnect and tab is active
@@ -160,6 +172,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       console.error("WebSocket connection error:", error);
       setIsConnected(false);
       currentMessageIdRef.current = null;
+      isConnectingRef.current = false; // Clear connecting flag on error
     };
     
     ws.onmessage = (event) => {
@@ -255,11 +268,16 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       
       if (isActive) {
         // Tab became active
-        if (!isConnected && conversationId && session?.access_token) {
-          // If disconnected, reconnect immediately
-          console.log('Tab active and disconnected - attempting immediate reconnection');
-          setReconnectAttempts(0); // Reset attempts for immediate reconnection
-          connectWebSocket();
+        if (!isConnected && !isConnectingRef.current && conversationId && session?.access_token) {
+          // If disconnected and not already connecting, reconnect with small delay
+          console.log('Tab active and disconnected - attempting reconnection');
+          setReconnectAttempts(0); // Reset attempts for fresh start
+          setTimeout(() => {
+            // Double-check we're still disconnected and tab is still active
+            if (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED) {
+              connectWebSocket();
+            }
+          }, 500); // Small delay to prevent rapid-fire attempts
         } else if (isConnected) {
           // If connected, start heartbeat
           startPingInterval();
@@ -317,7 +335,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         wsRef.current.close();
       }
     };
-  }, [conversationId, session?.access_token, session]);
+  }, [conversationId, session?.access_token]);
 
   const sendMessage = async (text: string, files?: FileAttachment[]) => {
     // Reset the current message ID so a new AI message will be created
