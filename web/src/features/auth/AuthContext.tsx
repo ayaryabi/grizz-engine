@@ -99,8 +99,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const initialUser = initialSession?.user ?? null;
       setSession(initialSession);
       setUser(initialUser);
-      await fetchProfileData(initialUser?.id);
-      setIsAuthReady(true);
+      
+      // Start profile fetch in parallel, don't wait for it to complete
+      if (initialUser?.id) {
+        fetchProfileData(initialUser.id); // Don't await - parallel execution
+      }
+      
+      setIsAuthReady(true); // Set ready immediately after session, don't wait for profile
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
@@ -191,7 +196,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     session,
     user,
     profile,
-    loading: !isAuthReady || isLoadingProfile,
+    loading: !isAuthReady, // Only block on auth readiness, let profile load in background
     signOut,
   };
 

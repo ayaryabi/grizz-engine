@@ -41,7 +41,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       return;
     }
 
-    // Start fetching immediately when session is available (parallel loading optimization)
+    // Start fetching immediately when session is available (optimistic loading)
     if (!session?.access_token) {
       return;
     }
@@ -54,6 +54,28 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
           throw new Error('No valid session');
         }
         
+        // Smart caching with timezone awareness
+        const userToday = new Date().toLocaleDateString();
+        const cacheKey = `conversation_${session.user?.id}_${userToday}`;
+        
+        // Check cache first
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const { conversationId: cachedId, date } = JSON.parse(cached);
+            if (date === userToday && cachedId) {
+              console.log('Today conversation loaded from cache:', cachedId);
+              setConversationId(cachedId);
+              setLoading(false);
+              return;
+            }
+          } catch (e) {
+            // Cache corrupted, fall through to fetch
+            localStorage.removeItem(cacheKey);
+          }
+        }
+        
+        // Cache miss or different day - fetch fresh
         const response = await fetch('/api/chat/today', {
           method: 'POST',
           headers: {
@@ -72,6 +94,12 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         const data = await response.json();
         console.log('Today conversation fetched:', data);
         setConversationId(data.id);
+        
+        // Store in cache for future same-day visits
+        localStorage.setItem(cacheKey, JSON.stringify({
+          conversationId: data.id,
+          date: userToday
+        }));
       } catch (error) {
         console.error('Error fetching today conversation:', error);
       } finally {
