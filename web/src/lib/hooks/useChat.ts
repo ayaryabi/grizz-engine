@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Message, FileAttachment } from '@/lib/types';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -69,7 +69,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
               setLoading(false);
               return;
             }
-          } catch (e) {
+          } catch {
             // Cache corrupted, fall through to fetch
             localStorage.removeItem(cacheKey);
           }
@@ -120,7 +120,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   };
 
   // WebSocket connection function (extracted for reuse)
-  const connectWebSocket = () => {
+  const connectWebSocket = useCallback(() => {
     if (!conversationId || !session?.access_token) {
       console.log(`WebSocket not connecting, missing ${!conversationId ? 'conversationId' : 'access_token'}`);
       return;
@@ -239,7 +239,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         });
       }
     };
-  };
+  }, [conversationId, session?.access_token]);
 
   // Reconnection logic with exponential backoff
   const attemptReconnection = () => {
@@ -324,7 +324,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [conversationId, session?.access_token]);
+  }, [conversationId, session?.access_token, isConnected]);
 
   // Main WebSocket connection effect
   useEffect(() => {
@@ -363,7 +363,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         wsRef.current.close();
       }
     };
-  }, [conversationId, session?.access_token]);
+  }, [conversationId, session?.access_token, connectWebSocket]);
 
   const sendMessage = async (text: string, files?: FileAttachment[]) => {
     // Reset the current message ID so a new AI message will be created
