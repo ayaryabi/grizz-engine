@@ -45,8 +45,8 @@ async def get_redis_pool() -> redis.Redis:
                 REDIS_URL,
                 decode_responses=True,
                 max_connections=max_connections,
-                socket_timeout=5.0,           # Socket timeout
-                socket_connect_timeout=5.0,   # Connection timeout
+                socket_timeout=30.0,          # Increased socket timeout for reliability
+                socket_connect_timeout=15.0,  # Increased connection timeout
                 retry_on_timeout=True,        # Auto-retry on timeout
                 health_check_interval=30.0    # Regular health checks
             )
