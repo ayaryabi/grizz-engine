@@ -12,6 +12,7 @@ type UseChatReturn = {
   isConnected: boolean;
   sendMessage: (text: string, files?: FileAttachment[]) => void;
   loading: boolean;
+  isReconnecting: boolean;
 };
 
 export function useChat({ conversationId: propConversationId }: UseChatProps = {}): UseChatReturn {
@@ -22,6 +23,14 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   const [conversationId, setConversationId] = useState<string | null>(propConversationId || null);
   const wsRef = useRef<WebSocket | null>(null);
   const currentMessageIdRef = useRef<string | null>(null);
+  
+  // Heartbeat and reconnection state
+  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isActiveTabRef = useRef<boolean>(true);
+  const shouldReconnectRef = useRef<boolean>(true);
+  const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
 
   // Fetch today's conversation if no conversation ID is provided
   useEffect(() => {
@@ -72,19 +81,25 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     fetchTodayConversation();
   }, [session?.access_token, propConversationId]);
 
-  useEffect(() => {
-    // Debug logging for session state
-    console.log('useChat debug:', {
-      hasSession: !!session,
-      hasAccessToken: !!session?.access_token,
-      conversationId,
-      sessionState: session
-    });
+  // Ping function to keep connection alive
+  const sendPing = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Send heartbeat ping
+      wsRef.current.send(JSON.stringify({ type: 'ping' }));
+      console.log('Heartbeat ping sent');
+    }
+  };
 
-    // Only connect if we have both a conversation ID and a token
+  // WebSocket connection function (extracted for reuse)
+  const connectWebSocket = () => {
     if (!conversationId || !session?.access_token) {
       console.log(`WebSocket not connecting, missing ${!conversationId ? 'conversationId' : 'access_token'}`);
       return;
+    }
+
+    // Close existing connection if any
+    if (wsRef.current) {
+      wsRef.current.close();
     }
 
     console.log(`WebSocket connecting to conversation: ${conversationId}`);
@@ -120,12 +135,25 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     ws.onopen = () => {
       console.log("WebSocket connection opened successfully");
       setIsConnected(true);
+      setIsReconnecting(false);
+      setReconnectAttempts(0);
+      
+      // Start heartbeat when connected and tab is active
+      if (isActiveTabRef.current) {
+        startPingInterval();
+      }
     };
     
     ws.onclose = (event) => {
       console.error(`WebSocket connection closed with code: ${event.code}, reason: ${event.reason}`);
       setIsConnected(false);
       currentMessageIdRef.current = null;
+      stopPingInterval();
+      
+      // Attempt reconnection if we should reconnect and tab is active
+      if (shouldReconnectRef.current && isActiveTabRef.current) {
+        attemptReconnection();
+      }
     };
     
     ws.onerror = (error) => {
@@ -136,6 +164,12 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     
     ws.onmessage = (event) => {
       console.log("WebSocket message received:", event.data.substring(0, 50) + "...");
+      
+      // Ignore ping responses
+      if (event.data === JSON.stringify({ type: 'pong' })) {
+        return;
+      }
+      
       // Append to current AI message or create a new one
       if (!currentMessageIdRef.current) {
         // Start a new AI message
@@ -164,11 +198,124 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         });
       }
     };
+  };
+
+  // Reconnection logic with exponential backoff
+  const attemptReconnection = () => {
+    if (!shouldReconnectRef.current || reconnectAttempts >= 10) {
+      console.log('Max reconnection attempts reached or reconnection disabled');
+      setIsReconnecting(false);
+      return;
+    }
+
+    setIsReconnecting(true);
+    const attempt = reconnectAttempts + 1;
+    setReconnectAttempts(attempt);
+    
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
+    
+    console.log(`Attempting reconnection ${attempt}/10 in ${delay}ms`);
+    
+    reconnectTimeoutRef.current = setTimeout(() => {
+      connectWebSocket();
+    }, delay);
+  };
+
+  // Start ping interval
+  const startPingInterval = () => {
+    stopPingInterval(); // Clear any existing interval
+    
+    // Send ping every 4 minutes (240000ms)
+    pingIntervalRef.current = setInterval(() => {
+      if (isActiveTabRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+        sendPing();
+      }
+    }, 4 * 60 * 1000);
+    
+    console.log('Heartbeat interval started (4 minutes)');
+  };
+
+  // Stop ping interval
+  const stopPingInterval = () => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+      console.log('Heartbeat interval stopped');
+    }
+  };
+
+  // Page visibility detection for tab switching
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const isActive = !document.hidden;
+      isActiveTabRef.current = isActive;
+      
+      console.log(`Tab ${isActive ? 'active' : 'inactive'}`);
+      
+      if (isActive) {
+        // Tab became active
+        if (!isConnected && conversationId && session?.access_token) {
+          // If disconnected, reconnect immediately
+          console.log('Tab active and disconnected - attempting immediate reconnection');
+          setReconnectAttempts(0); // Reset attempts for immediate reconnection
+          connectWebSocket();
+        } else if (isConnected) {
+          // If connected, start heartbeat
+          startPingInterval();
+        }
+      } else {
+        // Tab became inactive - stop heartbeat to let server timeout naturally
+        stopPingInterval();
+      }
+    };
+    
+    // Set initial state
+    isActiveTabRef.current = !document.hidden;
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [conversationId, session?.access_token]);
+
+  // Main WebSocket connection effect
+  useEffect(() => {
+    // Debug logging for session state
+    console.log('useChat debug:', {
+      hasSession: !!session,
+      hasAccessToken: !!session?.access_token,
+      conversationId,
+      sessionState: session
+    });
+
+    // Only connect if we have both a conversation ID and a token
+    if (!conversationId || !session?.access_token) {
+      console.log(`WebSocket not connecting, missing ${!conversationId ? 'conversationId' : 'access_token'}`);
+      return;
+    }
+
+    // Enable reconnection
+    shouldReconnectRef.current = true;
+    
+    // Connect to WebSocket
+    connectWebSocket();
 
     // Cleanup: close the WebSocket connection when the component unmounts
     return () => {
       console.log("Closing WebSocket connection due to component cleanup");
-      ws.close();
+      shouldReconnectRef.current = false; // Disable reconnection
+      stopPingInterval();
+      
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
   }, [conversationId, session?.access_token, session]);
 
@@ -256,6 +403,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     messages,
     isConnected,
     sendMessage,
-    loading
+    loading,
+    isReconnecting
   };
 } 
