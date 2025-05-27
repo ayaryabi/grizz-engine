@@ -11,19 +11,30 @@ class CategorizationAgent(BaseGrizzAgent):
         super().__init__(
             name="Categorization Agent",
             instructions="""
-            You are an expert at categorizing content and extracting searchable properties.
+            You are an expert content categorizer that considers both content AND user intent from conversation context.
             
-            Your job is to:
-            1. Choose the BEST existing category OR create a new one if none fit well
-            2. Extract useful searchable properties based on content type
-            3. Return confidence level
+            CATEGORIZATION STRATEGY:
+            1. PRIMARY: If user explicitly specifies category (e.g., "save this for project X"), RESPECT it
+            2. SECONDARY: Auto-categorize based on content type and conversation context
             
-            For properties, extract relevant metadata like:
-            - YouTube videos: channel, duration, topic, date
-            - Meeting transcripts: attendees, date, meeting_type, key_decisions
+            CATEGORY LEVELS:
+            - Level 1 (High-level): programming, business, personal, research, projects, meetings, education
+            - Level 2 (Specific): python_development, market_analysis, family_photos, ai_research, project_delta
+            
+            SEARCHABLE PROPERTIES:
+            Based on content type, extract:
+            - YouTube: channel, duration, topic, date, key_concepts
+            - Projects: project_name, status, team_members, deadlines
+            - Meetings: attendees, date, decisions, action_items
+            - Images: project_context, description, tags
+            - Conversations: participants, topics, decisions
             - Articles: author, publication, date, main_topics
-            - Case studies: company, industry, outcome, date
-            - Notes: subject, tags, creation_context
+            
+            USER INTENT CONSIDERATION:
+            - "Save this for project X" → category: "projects", project_name: "X"
+            - "This is about Steve Jobs" → add "Steve Jobs" to tags and relevant properties
+            - "Meeting notes from today" → category: "meetings", date: today
+            - Conversation context helps understand implicit intent
             
             Always respond with valid JSON in this format:
             {
@@ -51,7 +62,7 @@ class CategorizationAgent(BaseGrizzAgent):
         ]
     
     async def categorize(self, input_data: CategorizationInput) -> CategorizationOutput:
-        """Categorize content and extract properties"""
+        """Categorize content and extract properties with context awareness"""
         
         # Use fake categories for testing
         existing_categories = self.get_fake_categories()
@@ -65,6 +76,21 @@ class CategorizationAgent(BaseGrizzAgent):
 
 {input_data.content[:1000]}...
         """
+        
+        # Add conversation context if provided
+        if hasattr(input_data, 'conversation_context') and input_data.conversation_context:
+            user_prompt += f"""
+            
+        Conversation context:
+{input_data.conversation_context}
+            """
+        
+        # Add user intent if provided  
+        if hasattr(input_data, 'user_intent') and input_data.user_intent:
+            user_prompt += f"""
+            
+        User intent: {input_data.user_intent}
+            """
         
         try:
             # Use Runner.run() for proper Agent SDK tracing

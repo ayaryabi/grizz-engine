@@ -8,24 +8,37 @@ import traceback
 memory_agent = Agent(
     name="Memory Agent",
     instructions="""
-    You are a memory planning coordinator. Analyze the user's memory request and create a structured execution plan.
+    You are a memory planning coordinator that helps users save different types of content based on conversation context.
     
-    Available tools for execution:
-    - format_content_tool: Format content as clean markdown
-    - categorize_content_tool: Categorize content and extract properties
-    - save_content_tool: Save formatted content to database
+    CONTENT TYPES YOU HANDLE:
+    - Images: User shares images for projects, reference, etc.
+    - YouTube transcripts: From channels, educational videos, etc.  
+    - Project information: Work docs, ideas, plans
+    - Conversation summaries: "Summarize our discussion about X and save it"
+    - Meeting notes: Transcripts, action items
+    - Articles/Documents: Research, reference materials
     
-    Create an optimal execution plan considering:
-    1. Dependencies: formatting must happen before categorization and saving
-    2. Parallelization: some steps can run simultaneously to improve performance
-    3. Tool parameters: specify exact parameters each tool needs
+    AVAILABLE TOOLS:
+    - summarize_content_tool: Summarize conversations or long content
+    - format_content_tool: Clean formatting into markdown
+    - categorize_content_tool: Auto-categorize and tag content with context awareness
+    - save_content_tool: Store to database
     
-    Use these exact action types and tool names:
-    - action: "format_markdown", tool_name: "format_content_tool"
-    - action: "categorize", tool_name: "categorize_content_tool"  
-    - action: "save_memory", tool_name: "save_content_tool"
+    PLANNING STRATEGY:
+    1. Analyze user intent from conversation context
+    2. Determine what processing is needed:
+       - If "summarize conversation" → use summarize_content_tool first
+       - If raw content → format and categorize in parallel
+       - If user specifies category → respect user preference in categorization
+    3. Create optimal execution plan with parallel steps where possible
     
-    After creating the structured plan, hand off to Memory Actor for execution.
+    PARALLELIZATION RULES:
+    - Summarization must happen BEFORE formatting/categorization
+    - Formatting and categorization can run in PARALLEL
+    - Saving must wait for all processing to complete
+    
+    Always consider the conversation context to understand user intent better.
+    Include conversation context and user intent in tool parameters where needed.
     """,
     output_type=MemoryPlan,  # ← RESTORED: We DO want structured planning
     handoffs=[memory_actor_agent],
@@ -43,6 +56,8 @@ class MemoryManager:
         self, 
         user_request: str, 
         content: str, 
+        conversation_history: list = None,
+        latest_message: str = "",
         title: str = "Untitled",
         item_type: str = "unknown"
     ) -> Dict[str, Any]:
@@ -52,6 +67,8 @@ class MemoryManager:
         Args:
             user_request: What the user wants to do
             content: The content to save
+            conversation_history: List of previous messages in the conversation
+            latest_message: The latest message in the conversation
             title: Title for the content
             item_type: Type of content (youtube_video, meeting, etc.)
             
@@ -68,13 +85,29 @@ class MemoryManager:
             # Let the test agent's tool call provide the main trace - no manual trace wrapper
             # STEP 1: Create structured plan using Memory Agent
             print(f"\n🧠 Creating execution plan...")
+            
+            # Format conversation context
+            formatted_context = ""
+            if conversation_history:
+                formatted_context = "\n".join([
+                    f"{msg.get('role', 'user')}: {msg.get('content', '')}" 
+                    for msg in conversation_history[-10:]  # Last 10 messages
+                ])
+            
             plan_input = f"""
-            User request: {user_request}
-            Content type: {item_type}
+            CONVERSATION CONTEXT (Last 10 messages):
+            {formatted_context}
+            
+            LATEST USER MESSAGE: 
+            {latest_message or user_request}
+            
+            CONTENT TO SAVE:
+            Type: {item_type}
             Content: {content}
-            Title: {title}
+            User Intent: {user_request}
             
             Create a structured execution plan for this memory operation.
+            Consider the conversation context to understand user intent better.
             """
             
             plan_result = await Runner.run(self.agent, plan_input)

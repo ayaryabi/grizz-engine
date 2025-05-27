@@ -1,16 +1,32 @@
 from agents import Agent, function_tool
-from ...models.tools import MarkdownFormatInput, CategorizationInput
+from ...models.tools import MarkdownFormatInput, CategorizationInput, SummarizationInput
 from ...models.memory import SaveMemoryInput
 from ...models.agents import MemoryPlan, PlanStep, MemoryExecutionResult
 from ...tools.markdown_tools import markdown_formatter_tool
 from ...tools.categorization_tools import categorization_tool
 from ...tools.memory_tools import save_memory_tool
+from ...tools.summarization_tools import summarization_tool
 from typing import Dict, Any, List
 from pydantic import BaseModel
 import asyncio
 import json
 
 # Simple function tools that only use basic types
+@function_tool
+async def summarize_content_tool(
+    content: str, 
+    conversation_context: str = "", 
+    summary_type: str = "general"
+) -> str:
+    """Summarize content with optional conversation context"""
+    input_data = SummarizationInput(
+        content=content,
+        conversation_context=conversation_context,
+        summary_type=summary_type
+    )
+    result = await summarization_tool(input_data)
+    return result.summarized_content
+
 @function_tool
 async def format_content_tool(content: str, item_type: str = "unknown") -> str:
     """Format content into clean markdown"""
@@ -19,12 +35,19 @@ async def format_content_tool(content: str, item_type: str = "unknown") -> str:
     return result.formatted_content
 
 @function_tool  
-async def categorize_content_tool(content: str, item_type: str = "unknown") -> str:
-    """Categorize content and extract properties, returns 'category|properties_json'"""
+async def categorize_content_tool(
+    content: str, 
+    conversation_context: str = "", 
+    user_intent: str = "", 
+    item_type: str = "unknown"
+) -> str:
+    """Categorize content and extract properties with context awareness, returns 'category|properties_json'"""
     input_data = CategorizationInput(
         content=content, 
         item_type=item_type,
-        existing_categories=[]
+        existing_categories=[],
+        conversation_context=conversation_context,
+        user_intent=user_intent
     )
     result = await categorization_tool(input_data)
     # Return as simple string to avoid schema issues
@@ -88,7 +111,7 @@ async def execute_memory_plan(plan_json: str, content: str, title: str, item_typ
             elif step.action == "categorize":
                 # Use formatted content if available, otherwise original
                 content_to_use = step_results.get("format_step", content)
-                result = await categorize_content_tool(content_to_use, item_type)
+                result = await categorize_content_tool(content_to_use, "", "", item_type)
                 step_results[step.step_id] = result
                 return result
                 
@@ -172,28 +195,27 @@ async def execute_memory_plan(plan_json: str, content: str, title: str, item_typ
 memory_actor_agent = Agent(
     name="Memory Actor Agent", 
     instructions="""
-    You are a memory execution agent that executes memory plans step by step.
+    You are a memory execution agent. Your job is simple: execute the plan you receive.
     
-    When you receive a memory plan from the Memory Agent:
-    1. Follow the steps in the exact order provided
-    2. Use the individual tools for each step:
-       - format_content_tool: Format content as markdown
-       - categorize_content_tool: Categorize content (returns "category|properties_json")
-       - save_content_tool: Save to database (returns "title|id")
-    3. Pass results between steps as needed
+    EXECUTION PATTERN:
+    1. Follow the plan steps in the exact order provided
+    2. For parallel steps, execute them efficiently  
+    3. Pass conversation context and user intent to tools when needed
     4. Return structured results with the actual database ID
     
-    Step execution pattern:
-    1. Format: Call format_content_tool with the content
-    2. Categorize: Call categorize_content_tool with formatted content  
-    3. Save: Call save_content_tool with title, formatted content, and category
+    TOOL USAGE:
+    - summarize_content_tool: Pass content + conversation context + summary type
+    - format_content_tool: Pass content + item type
+    - categorize_content_tool: Pass content + conversation context + user intent + item type
+    - save_content_tool: Use processed results from previous steps
     
     IMPORTANT: When save_content_tool returns "title|id", extract the ID and include it in your structured response.
     The save tool returns data like "My Title|abc123" - extract "abc123" as the memory_id.
     
+    Be efficient, accurate, and always return the actual memory ID from saving.
     Always execute steps in dependency order and return the structured result.
     """,
     output_type=MemoryExecutionResult,  # ← Structured output!
     model="gpt-4o-mini",  # Fast execution model
-    tools=[format_content_tool, categorize_content_tool, save_content_tool]
+    tools=[summarize_content_tool, format_content_tool, categorize_content_tool, save_content_tool]
 ) 

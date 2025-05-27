@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Literal
 class PlanStep(BaseModel):
     """Individual step in a memory plan"""
     step_id: str = Field(description="Unique step identifier")
-    action: Literal["format_markdown", "categorize", "save_memory"] = Field(
+    action: Literal["summarize_content", "format_markdown", "categorize", "save_memory"] = Field(
         description="Exact action type - must be one of these"
     )
     tool_name: str = Field(description="Exact tool function name to call")
