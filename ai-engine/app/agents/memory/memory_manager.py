@@ -127,10 +127,14 @@ class MemoryManager:
             Title: {title}
             Type: {item_type}
             
+            CONVERSATION CONTEXT (for tools that need it):
+            {formatted_context}
+            
             Steps to execute:
             {chr(10).join([f"{i+1}. {step.action} - {step.description}" for i, step in enumerate(execution_plan.steps)])}
             
             Follow the steps in order and use the available tools.
+            When calling tools that need conversation context, use the conversation context provided above.
             """
             
             execution_result = await Runner.run(memory_actor_agent, execution_input)

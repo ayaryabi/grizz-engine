@@ -1,5 +1,11 @@
 from agents import Agent, Runner
 from typing import List, Optional
+import sys
+import os
+
+# Add tools directory to path for Unicode sanitizer
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from tools_unicode_fix import fix_copy_paste_input
 
 
 class BaseGrizzAgent(Agent):
@@ -29,6 +35,9 @@ class BaseGrizzAgent(Agent):
     
     async def process(self, user_input: str):
         """Regular text processing via Agent SDK"""
+        # 🛠️ FIX: Sanitize input to prevent Unicode issues that cause tools to disappear
+        user_input = fix_copy_paste_input(user_input)
+        
         result = await Runner.run(self, user_input)
         return result.final_output
     
@@ -36,6 +45,9 @@ class BaseGrizzAgent(Agent):
         """Format conversation for Agent SDK streaming with proper multimodal support"""
         # Based on GitHub issue #159: https://github.com/openai/openai-agents-python/issues/159
         # Agent SDK expects input in specific format for multimodal
+        
+        # 🛠️ FIX: Sanitize user input to prevent Unicode issues that cause tools to disappear
+        user_message = fix_copy_paste_input(user_message)
         
         # Build full conversation history for Agent SDK
         formatted_messages = []
