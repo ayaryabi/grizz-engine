@@ -1,11 +1,8 @@
 from agents import Agent, Runner
 from typing import List, Optional
-import sys
-import os
 
-# Add tools directory to path for Unicode sanitizer
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from tools_unicode_fix import fix_copy_paste_input
+# Import Unicode sanitizer from services
+from app.services.tools_unicode_fix import fix_copy_paste_input
 
 
 class BaseGrizzAgent(Agent):
