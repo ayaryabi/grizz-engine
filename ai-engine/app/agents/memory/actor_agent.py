@@ -1,7 +1,7 @@
 from agents import Agent, function_tool
 from ...models.tools import MarkdownFormatInput, CategorizationInput
 from ...models.memory import SaveMemoryInput
-from ...models.agents import MemoryPlan, PlanStep
+from ...models.agents import MemoryPlan, PlanStep, MemoryExecutionResult
 from ...tools.markdown_tools import markdown_formatter_tool
 from ...tools.categorization_tools import categorization_tool
 from ...tools.memory_tools import save_memory_tool
@@ -181,17 +181,19 @@ memory_actor_agent = Agent(
        - categorize_content_tool: Categorize content (returns "category|properties_json")
        - save_content_tool: Save to database (returns "title|id")
     3. Pass results between steps as needed
-    4. Return a clear summary of what was accomplished
-    
-    DO NOT use execute_memory_plan - it has validation issues. Use individual tools instead.
+    4. Return structured results with the actual database ID
     
     Step execution pattern:
     1. Format: Call format_content_tool with the content
-    2. Categorize: Call categorize_content_tool with formatted content
+    2. Categorize: Call categorize_content_tool with formatted content  
     3. Save: Call save_content_tool with title, formatted content, and category
     
-    Always execute steps in dependency order and provide clear status updates.
+    IMPORTANT: When save_content_tool returns "title|id", extract the ID and include it in your structured response.
+    The save tool returns data like "My Title|abc123" - extract "abc123" as the memory_id.
+    
+    Always execute steps in dependency order and return the structured result.
     """,
+    output_type=MemoryExecutionResult,  # ← Structured output!
     model="gpt-4o-mini",  # Fast execution model
     tools=[format_content_tool, categorize_content_tool, save_content_tool]
 ) 

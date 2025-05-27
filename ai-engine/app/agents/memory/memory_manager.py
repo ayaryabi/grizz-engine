@@ -1,4 +1,4 @@
-from agents import Agent, Runner
+from agents import Agent, Runner, trace
 from .planner_agent import memory_planner_agent
 from .actor_agent import memory_actor_agent
 from ...models.agents import MemoryPlan
@@ -66,6 +66,7 @@ class MemoryManager:
             print(f"   📄 Content length: {len(content)} chars")
             print(f"   🏷️  Type: {item_type}")
             
+            # Let the test agent's tool call provide the main trace - no manual trace wrapper
             # STEP 1: Create structured plan using Memory Agent
             print(f"\n🧠 Creating execution plan...")
             plan_input = f"""
@@ -101,36 +102,20 @@ class MemoryManager:
             """
             
             execution_result = await Runner.run(memory_actor_agent, execution_input)
-            final_result = execution_result.final_output
+            execution_data = execution_result.final_output  # This is now MemoryExecutionResult!
             
             print(f"✅ Execution completed!")
+            print(f"🆔 Memory ID: {execution_data.memory_id}")
             
-            # Parse the execution result to extract title and ID
-            parsed_result = {
-                "success": True,
+            # Return structured result - no more text parsing needed!
+            return {
+                "success": execution_data.success,
                 "plan": execution_plan.dict(),
-                "execution_log": final_result,
-                "title": title,
-                "id": None
+                "execution_summary": execution_data.summary,
+                "title": execution_data.title,
+                "id": execution_data.memory_id,  # ← Direct access to ID!
+                "category": execution_data.category
             }
-            
-            # Try to extract ID from the result string
-            if "🆔 ID:" in final_result:
-                lines = final_result.split('\n')
-                for line in lines:
-                    if "🆔 ID:" in line:
-                        parsed_result["id"] = line.split("🆔 ID:")[-1].strip()
-                        break
-            
-            # Try to extract title from result if available
-            if "📝 Title:" in final_result:
-                lines = final_result.split('\n')
-                for line in lines:
-                    if "📝 Title:" in line:
-                        parsed_result["title"] = line.split("📝 Title:")[-1].strip()
-                        break
-            
-            return parsed_result
             
         except Exception as e:
             print(f"❌ Memory workflow failed with error: {str(e)}")
