@@ -1,95 +1,57 @@
-from agents import function_tool, trace
+from agents import Agent
 from .memory_manager import MemoryManager
 from typing import Dict, Any
 
-class MemoryToolWrapper:
+class MasterMemoryAgent(Agent):
     """
-    Simple wrapper that exposes the existing planner→actor memory workflow as a tool.
-    No new agents - just wraps the existing MemoryManager.
+    Memory Agent that exposes the existing planner→actor memory workflow as an agent.
+    Can be used as agent.as_tool() for other agents.
     """
     
     def __init__(self):
-        # Just use the existing memory manager (which has planner + actor)
         self.memory_manager = MemoryManager()
-    
-    async def process_memory_request(
-        self, 
-        user_request: str, 
-        content: str, 
-        title: str = "Untitled",
-        item_type: str = "note"
-    ) -> Dict[str, Any]:
-        """
-        Process a memory request using the full planner→actor workflow
-        """
-        # Let the MemoryManager handle its own tracing - don't add extra trace wrapper
-        result = await self.memory_manager.process_memory_request(
-            user_request=user_request,
-            content=content,
-            title=title,
-            item_type=item_type
-        )
-        return result
-    
-    def as_tool(self, tool_name: str = None, tool_description: str = None):
-        """
-        Expose the existing planner→actor memory workflow as a tool
-        """
         
-        @function_tool(
-            name_override=tool_name or "save_memory_content",
-            description_override=tool_description or """
-            Save and process content to memory with intelligent planning and execution.
-            
-            This tool handles the complete memory workflow:
-            - Creates structured execution plans
-            - Formats content appropriately 
-            - Categorizes and tags content
-            - Saves to memory database
-            
-            Use this when users want to save information, content, or notes.
-            """
-        )
-        async def memory_tool(
-            user_request: str,
-            content: str, 
-            title: str = "Untitled",
-            content_type: str = "note"
-        ) -> str:
-            """
-            Save and process content to memory
-            
-            Args:
-                user_request: What the user wants to do (e.g., "Save this content", "Remember this for later")
-                content: The actual content to save
-                title: Title for the content
-                content_type: Type of content (note, meeting, youtube_video, etc.)
-            """
-            try:
-                result = await self.process_memory_request(
-                    user_request=user_request,
-                    content=content,
-                    title=title,
-                    item_type=content_type
-                )
-                
-                # Return a clear summary for the calling agent
-                if result.get('success'):
-                    return f"""✅ Memory operation completed successfully!
+        super().__init__(
+            name="Memory Agent",
+            instructions="""You are a specialized memory agent that saves and organizes information.
 
-**What was saved:** {title}
-**Content type:** {content_type}
+Your role:
+1. Take user content and save it to memory with proper formatting
+2. Use the existing memory management system (planner + actor workflow)
+3. Categorize and tag content appropriately
+4. Return clear status updates about what was saved
+
+When users want to save content, process their request and save it using the memory system."""
+        )
+    
+    async def run(self, user_input: str) -> str:
+        """
+        Process memory requests from user input
+        """
+        try:
+            # Parse the user request to extract content and title
+            # For now, treat the entire input as content
+            result = await self.memory_manager.process_memory_request(
+                user_request=user_input,
+                content=user_input,
+                title="User Content",
+                item_type="note"
+            )
+            
+            # Return a clear summary for the calling agent
+            if result.get('success'):
+                return f"""✅ Memory operation completed successfully!
+
+**Content saved:** {result.get('title', 'User Content')}
 **Memory ID:** {result.get('id', 'Generated')}
 **Status:** Content has been formatted, categorized, and saved to memory
 
 The content is now available for future retrieval and reference."""
-                else:
-                    return f"❌ Memory operation failed: {result.get('error', 'Unknown error occurred')}"
-                    
-            except Exception as e:
-                return f"❌ Memory operation error: {str(e)}"
-        
-        return memory_tool
+            else:
+                return f"❌ Memory operation failed: {result.get('error', 'Unknown error occurred')}"
+                
+        except Exception as e:
+            return f"❌ Memory operation error: {str(e)}"
 
 # Create singleton instance
-memory_tool_wrapper = MemoryToolWrapper() 
+master_memory_agent = MasterMemoryAgent() 

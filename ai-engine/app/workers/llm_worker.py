@@ -59,6 +59,11 @@ RETRY_DELAY = 2  # seconds
 # Global variables for graceful shutdown
 shutdown_event = asyncio.Event()
 
+# Debug: Show what tools the worker actually imported
+print(f"🔧 WORKER DEBUG: ChatAgent has {len(chat_agent.tools)} tools:")
+for i, tool in enumerate(chat_agent.tools):
+    print(f"🔧   Tool {i+1}: {tool.name}")
+
 async def process_chat_job(
     redis_conn: redis.Redis, 
     job_data: Dict[str, Any]
