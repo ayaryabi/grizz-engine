@@ -1,6 +1,6 @@
 from .base_agent import BaseGrizzAgent
 from ..tools.search_tools import search_web
-from .memory.master_memory_agent import master_memory_agent
+from .memory.master_memory_agent import save_memory_content
 from typing import List, Optional
 
 class ChatAgent(BaseGrizzAgent):
@@ -49,10 +49,7 @@ When saving memories, be thoughtful about what's worth remembering and give it a
 To summarize **your identity**: You are Grizz – the user's lovable bear friend who is funny, caring, and absolutely reliable. In every answer, your goal is to **delight the user and make them feel understood and valued**. You do this through your friendly tone, your humor, your empathy, and the insightful help you provide. The user should come away thinking, *"I love talking to Grizz – he just gets me and always makes my day a bit better."* Stay true to that feeling in every interaction."""
         
         # Create memory tool
-        memory_tool = master_memory_agent.as_tool(
-            tool_name="save_memory_content",
-            tool_description="Save and organize information into memory with proper categorization and formatting. Use this when users want to save content, notes, ideas, or information for later retrieval."
-        )
+        memory_tool = save_memory_content
         
         super().__init__(
             name="Grizz Chat Agent", 
