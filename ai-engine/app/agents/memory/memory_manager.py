@@ -57,22 +57,13 @@ class MemoryManager:
     async def process_memory_request(
         self, 
         user_request: str, 
-        content: str, 
-        conversation_history: list = None,
-        latest_message: str = "",
-        title: str = "Untitled",
-        item_type: str = "unknown"
+        **kwargs  # Accept any additional params but ignore them
     ) -> Dict[str, Any]:
         """
         Process a memory request through the unified agent workflow
         
         Args:
-            user_request: What the user wants to do
-            content: The content to save
-            conversation_history: List of previous messages in the conversation
-            latest_message: The latest message in the conversation
-            title: Title for the content
-            item_type: Type of content (youtube_video, meeting, etc.)
+            user_request: The original user message with full intent and content
             
         Returns:
             Dict with success status and result details
@@ -81,38 +72,12 @@ class MemoryManager:
         try:
             print(f"🎯 Starting memory workflow...")
             print(f"   📝 Request: {user_request}")
-            print(f"   📄 Content length: {len(content)} chars")
-            print(f"   🏷️  Type: {item_type}")
             
-            # Let the test agent's tool call provide the main trace - no manual trace wrapper
-            # STEP 1: Create structured plan using Memory Agent
+            # STEP 1: Let Memory Agent analyze the original message directly
             print(f"\n🧠 Creating execution plan...")
             
-            # Format conversation context
-            formatted_context = ""
-            if conversation_history:
-                formatted_context = "\n".join([
-                    f"{msg.get('role', 'user')}: {msg.get('content', '')}" 
-                    for msg in conversation_history[-10:]  # Last 10 messages
-                ])
-            
-            plan_input = f"""
-            CONVERSATION CONTEXT (Last 10 messages):
-            {formatted_context}
-            
-            LATEST USER MESSAGE: 
-            {latest_message or user_request}
-            
-            CONTENT TO SAVE:
-            Type: {item_type}
-            Content: {content}
-            User Intent: {user_request}
-            
-            Create a structured execution plan for this memory operation.
-            Consider the conversation context to understand user intent better.
-            """
-            
-            plan_result = await Runner.run(self.agent, plan_input)
+            # Just pass the original user message - let the Memory Agent be smart!
+            plan_result = await Runner.run(self.agent, user_request)
             execution_plan = plan_result.final_output
             
             print(f"📋 Plan created: {execution_plan.plan_id}")
@@ -125,18 +90,12 @@ class MemoryManager:
             
             Plan ID: {execution_plan.plan_id}
             User Request: {execution_plan.user_request}
-            Content: {content}
-            Title: {title}
-            Type: {item_type}
-            
-            CONVERSATION CONTEXT (for tools that need it):
-            {formatted_context}
+            Original Message: {user_request}
             
             Steps to execute:
             {chr(10).join([f"{i+1}. {step.action} - {step.description}" for i, step in enumerate(execution_plan.steps)])}
             
             Follow the steps in order and use the available tools.
-            When calling tools that need conversation context, use the conversation context provided above.
             """
             
             execution_result = await Runner.run(memory_actor_agent, execution_input)
@@ -145,13 +104,13 @@ class MemoryManager:
             print(f"✅ Execution completed!")
             print(f"🆔 Memory ID: {execution_data.memory_id}")
             
-            # Return structured result - no more text parsing needed!
+            # Return structured result
             return {
                 "success": execution_data.success,
                 "plan": execution_plan.dict(),
                 "execution_summary": execution_data.summary,
                 "title": execution_data.title,
-                "id": execution_data.memory_id,  # ← Direct access to ID!
+                "id": execution_data.memory_id,
                 "category": execution_data.category
             }
             
@@ -163,6 +122,6 @@ class MemoryManager:
             return {
                 "success": False,
                 "error": str(e),
-                "title": title,
+                "title": "Error",
                 "id": None
             } 

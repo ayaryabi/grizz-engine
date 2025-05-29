@@ -7,8 +7,8 @@ memory_manager = MemoryManager()
 
 @function_tool
 async def save_memory_content(
-    wrapper: RunContextWrapper[Any], 
-    input: str
+    wrapper: RunContextWrapper[Any],
+    content: str = ""  # Fixed: no leading underscore
 ) -> str:
     """Save and organize information into memory with proper categorization and formatting. Use this when users want to save content, notes, ideas, or information for later retrieval."""
     try:
@@ -17,10 +17,7 @@ async def save_memory_content(
         
         # Use the full planner→actor memory workflow with original message
         result = await memory_manager.process_memory_request(
-            user_request=original_message,  # Original user message with intent!
-            content=original_message,       # Same for now, planner will extract content
-            title="User Memory Request",
-            item_type="note"
+            user_request=original_message  # Just the original message - that's all we need!
         )
         
         # Format the response from the planner→actor workflow
