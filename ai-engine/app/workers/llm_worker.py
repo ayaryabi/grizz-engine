@@ -16,6 +16,7 @@ import sys
 import time
 import uuid
 from typing import Dict, Any, List, Optional
+from dataclasses import dataclass
 
 # Add parent directory to path so we can import app modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -31,7 +32,7 @@ from app.core.redis_client import (
 )
 from app.core.queue import move_to_dead_letter, publish_result_chunk
 # Agent SDK imports for streaming
-from agents import Runner
+from agents import Runner, RunContextWrapper
 from openai.types.responses import ResponseTextDeltaEvent
 
 from app.services.memory_service import fetch_recent_messages
@@ -63,6 +64,15 @@ shutdown_event = asyncio.Event()
 print(f"🔧 WORKER DEBUG: ChatAgent has {len(chat_agent.tools)} tools:")
 for i, tool in enumerate(chat_agent.tools):
     print(f"🔧   Tool {i+1}: {tool.name}")
+
+@dataclass
+class MessageContext:
+    """Context object containing original user message and metadata for tools"""
+    original_user_message: str
+    conversation_id: str
+    user_id: str
+    file_urls: List[str]
+    job_id: str
 
 async def process_chat_job(
     redis_conn: redis.Redis, 
@@ -129,16 +139,25 @@ async def process_chat_job(
         # 3. Stream response via Agent SDK using run_streamed
         openai_call_start_time = loop.time()
         
+        # Create context with original message data for tools
+        message_context = MessageContext(
+            original_user_message=message,  # Raw user message from Redis
+            conversation_id=conversation_id,
+            user_id=user_id,
+            file_urls=file_urls,
+            job_id=job_id
+        )
+        
         # Proper Agent SDK streaming approach
         from agents import Runner
         from openai.types.responses import ResponseTextDeltaEvent
         
-        # Use run_streamed for proper streaming
+        # Use run_streamed for proper streaming with context
         # conversation_input is now either a List[dict] for multimodal or str for text-only
         if file_urls and len(file_urls) > 0:
             logger.info(f"Job {job_id}: Sending multimodal input with {len(file_urls)} image(s) to Agent SDK")
         
-        streamed_result = Runner.run_streamed(chat_agent, conversation_input)
+        streamed_result = Runner.run_streamed(chat_agent, conversation_input, context=message_context)
         
         async def agent_chunks_iterator():
             """Convert Agent SDK streaming events to text chunks"""

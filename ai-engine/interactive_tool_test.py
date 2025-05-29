@@ -7,6 +7,8 @@ import asyncio
 import os
 import sys
 from datetime import datetime
+from dataclasses import dataclass
+from typing import List
 
 # Add the app directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
@@ -17,8 +19,17 @@ from app.core.config import get_settings
 # Load settings (this will load the .env file)
 settings = get_settings()
 
-from agents import Agent, Runner, TracingProcessor, Trace, add_trace_processor
-from app.agents.memory.master_memory_agent import memory_tool_wrapper
+from agents import Agent, Runner, TracingProcessor, Trace, add_trace_processor, RunContextWrapper
+from app.agents.memory.master_memory_agent import save_memory_content
+
+@dataclass
+class TestMessageContext:
+    """Test context for memory tools"""
+    original_user_message: str
+    conversation_id: str
+    user_id: str
+    file_urls: List[str]
+    job_id: str
 
 class ToolTestTraceInspector(TracingProcessor):
     """Capture and analyze traces from memory tool tests"""
@@ -78,7 +89,7 @@ add_trace_processor(trace_inspector)
 class InteractiveToolTester:
     def __init__(self):
         # Create memory tool from wrapper
-        self.memory_tool = memory_tool_wrapper.as_tool()
+        self.memory_tool = save_memory_content
         
         # Create test agent with memory tool
         self.test_agent = Agent(
@@ -151,8 +162,17 @@ class InteractiveToolTester:
         print("\n" + "🚀 STARTING TOOL TEST" + "="*35)
         
         try:
-            # Process through test agent (which has memory tool)
-            result = await Runner.run(self.test_agent, user_input)
+            # Create test context with the user input
+            test_context = TestMessageContext(
+                original_user_message=user_input,  # The raw user message
+                conversation_id="test-conversation",
+                user_id="test-user",
+                file_urls=[],
+                job_id="test-job"
+            )
+            
+            # Process through test agent with context (which has memory tool)
+            result = await Runner.run(self.test_agent, user_input, context=test_context)
             
             print("\n" + "🎉 TOOL TEST COMPLETED" + "="*32)
             

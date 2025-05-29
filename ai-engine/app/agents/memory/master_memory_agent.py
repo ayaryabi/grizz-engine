@@ -1,17 +1,24 @@
-from agents import function_tool
+from agents import function_tool, RunContextWrapper
 from .memory_manager import MemoryManager
+from typing import Any
 
 # Create memory manager instance
 memory_manager = MemoryManager()
 
 @function_tool
-async def save_memory_content(input: str) -> str:
+async def save_memory_content(
+    wrapper: RunContextWrapper[Any], 
+    input: str
+) -> str:
     """Save and organize information into memory with proper categorization and formatting. Use this when users want to save content, notes, ideas, or information for later retrieval."""
     try:
-        # Use the full planner→actor memory workflow
+        # Access the original user message from context
+        original_message = wrapper.context.original_user_message
+        
+        # Use the full planner→actor memory workflow with original message
         result = await memory_manager.process_memory_request(
-            user_request=input,
-            content=input,
+            user_request=original_message,  # Original user message with intent!
+            content=original_message,       # Same for now, planner will extract content
             title="User Memory Request",
             item_type="note"
         )
