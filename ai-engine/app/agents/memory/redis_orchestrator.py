@@ -1,0 +1,258 @@
+import asyncio
+import json
+import time
+from typing import Dict, Any, List
+from ...models.agents import MemoryPlan, PlanStep
+from ...tools.markdown_tools import markdown_formatter_tool
+from ...tools.categorization_tools import categorization_tool
+from ...tools.memory_tools import save_memory_tool
+from ...tools.summarization_tools import summarization_tool
+from ...models.tools import MarkdownFormatInput, CategorizationInput, SummarizationInput
+from ...models.memory import SaveMemoryInput
+from ...core.redis_client import get_redis_pool
+
+class RedisWorkflowOrchestrator:
+    """
+    Redis-based workflow orchestrator - replaces massive string bottleneck
+    Each tool reads from Redis hash, processes, writes back to Redis hash
+    Eliminates Agent SDK string transfer overhead
+    """
+    
+    def __init__(self):
+        self.redis_conn = None
+    
+    async def _get_redis(self):
+        """Get Redis connection"""
+        if self.redis_conn is None:
+            self.redis_conn = await get_redis_pool()
+        return self.redis_conn
+    
+    async def save_plan_to_redis_hash(self, execution_plan: MemoryPlan, user_request: str) -> str:
+        """Save plan and content to Redis hash, return hash key"""
+        redis_conn = await self._get_redis()
+        
+        workflow_id = f"workflow:{execution_plan.plan_id}"
+        
+        # Save all data to Redis hash (Redis doesn't accept None values)
+        workflow_data = {
+            "plan_id": execution_plan.plan_id,
+            "user_request": execution_plan.user_request,
+            "original_content": user_request,
+            "plan_json": json.dumps(execution_plan.dict()),
+            "status": "ready",
+            "current_step": "",
+            "completed_steps": json.dumps([]),
+            "timing": json.dumps({}),
+            
+            # Step results (will be populated during execution) - empty strings instead of None
+            "formatted_content": "",
+            "summary": "",
+            "category": "",
+            "category_properties": "",
+            "memory_id": "",
+            "final_title": ""
+        }
+        
+        await redis_conn.hset(workflow_id, mapping=workflow_data)
+        print(f"💾 Saved workflow plan to Redis hash: {workflow_id}")
+        return workflow_id
+    
+    async def execute_workflow(self, workflow_id: str) -> str:
+        """Execute complete workflow from Redis hash"""
+        redis_conn = await self._get_redis()
+        
+        print(f"🚀 Starting Redis Workflow Orchestrator")
+        print(f"📋 Workflow ID: {workflow_id}")
+        print("=" * 80)
+        
+        overall_start = time.time()
+        
+        try:
+            # Load plan from Redis
+            workflow_data = await redis_conn.hgetall(workflow_id)
+            plan_data = json.loads(workflow_data["plan_json"])
+            plan = MemoryPlan(**plan_data)
+            
+            await redis_conn.hset(workflow_id, "status", "executing")
+            
+            print(f"📋 Plan loaded: {len(plan.steps)} steps")
+            
+            # Execute steps with dependency resolution
+            completed_steps = set()
+            
+            while len(completed_steps) < len(plan.steps):
+                # Get steps ready for execution
+                ready_steps = []
+                for step in plan.steps:
+                    if step.step_id not in completed_steps:
+                        if all(dep_id in completed_steps for dep_id in step.dependencies):
+                            ready_steps.append(step)
+                
+                if not ready_steps:
+                    raise ValueError("Circular dependency or missing steps detected")
+                
+                # Execute ready steps (can be parallel if independent)
+                for step in ready_steps:
+                    await self._execute_step(workflow_id, step)
+                    completed_steps.add(step.step_id)
+                    print(f"✅ Completed: {step.step_id}")
+            
+            # Mark as completed
+            overall_time = time.time() - overall_start
+            await redis_conn.hset(workflow_id, mapping={
+                "status": "completed",
+                "total_time": str(overall_time)
+            })
+            
+            print("\n" + "=" * 80)
+            print("🎉 WORKFLOW COMPLETED SUCCESSFULLY!")
+            print(f"⏱️  Total Time: {overall_time:.2f} seconds")
+            
+            # Get final results
+            final_data = await redis_conn.hgetall(workflow_id)
+            memory_id = final_data.get("memory_id", "unknown")
+            category = final_data.get("category", "general")
+            
+            return f"Workflow completed successfully. Memory ID: {memory_id}, Category: {category}"
+            
+        except Exception as e:
+            await redis_conn.hset(workflow_id, mapping={
+                "status": "failed",
+                "error": str(e)
+            })
+            print(f"💥 WORKFLOW FAILED: {str(e)}")
+            raise
+    
+    async def _execute_step(self, workflow_id: str, step: PlanStep):
+        """Execute individual workflow step"""
+        redis_conn = await self._get_redis()
+        
+        print(f"\n🔧 Starting Step: {step.step_id} ({step.action})")
+        step_start = time.time()
+        
+        await redis_conn.hset(workflow_id, "current_step", step.step_id)
+        
+        # Load current state
+        workflow_data = await redis_conn.hgetall(workflow_id)
+        
+        if step.action == "format_markdown":
+            await self._step_format_content(workflow_id, workflow_data)
+        elif step.action == "summarize_content":
+            await self._step_summarize_content(workflow_id, workflow_data)
+        elif step.action == "categorize":
+            await self._step_categorize_content(workflow_id, workflow_data)
+        elif step.action == "save_memory":
+            await self._step_save_content(workflow_id, workflow_data)
+        else:
+            raise ValueError(f"Unknown action: {step.action}")
+        
+        step_duration = time.time() - step_start
+        print(f"   ✅ Completed {step.step_id} in {step_duration:.2f}s")
+        
+        await redis_conn.hset(workflow_id, "current_step", "none")
+    
+    async def _step_format_content(self, workflow_id: str, workflow_data: Dict[str, Any]):
+        """Step 1: Format content using markdown formatter tool"""
+        redis_conn = await self._get_redis()
+        
+        content = workflow_data["original_content"]
+        
+        # Use existing tool
+        input_data = MarkdownFormatInput(
+            content=content,
+            item_type="general"
+        )
+        result = await markdown_formatter_tool(input_data)
+        
+        # Update Redis hash
+        await redis_conn.hset(workflow_id, mapping={
+            "formatted_content": result.formatted_content,
+            "formatted_length": str(len(result.formatted_content))
+        })
+        
+        print(f"   📝 Formatted to {len(result.formatted_content)} chars")
+    
+    async def _step_summarize_content(self, workflow_id: str, workflow_data: Dict[str, Any]):
+        """Step 2: Summarize formatted content"""
+        redis_conn = await self._get_redis()
+        
+        formatted_content = workflow_data.get("formatted_content") or workflow_data["original_content"]
+        
+        # Use existing tool
+        input_data = SummarizationInput(
+            content=formatted_content,
+            conversation_context="",
+            summary_type="general"
+        )
+        result = await summarization_tool(input_data)
+        
+        # Update Redis hash
+        await redis_conn.hset(workflow_id, mapping={
+            "summary": result.summarized_content,
+            "summary_length": str(len(result.summarized_content))
+        })
+        
+        print(f"   📄 Summary: {len(result.summarized_content)} chars")
+    
+    async def _step_categorize_content(self, workflow_id: str, workflow_data: Dict[str, Any]):
+        """Step 3: Categorize formatted content"""
+        redis_conn = await self._get_redis()
+        
+        formatted_content = workflow_data.get("formatted_content") or workflow_data["original_content"]
+        
+        # Use existing tool
+        input_data = CategorizationInput(
+            content=formatted_content,
+            item_type="general",
+            existing_categories=[],
+            conversation_context="",
+            user_intent=""
+        )
+        result = await categorization_tool(input_data)
+        
+        # Update Redis hash
+        await redis_conn.hset(workflow_id, mapping={
+            "category": result.category,
+            "category_properties": json.dumps(result.properties)
+        })
+        
+        print(f"   🏷️  Category: {result.category}")
+    
+    async def _step_save_content(self, workflow_id: str, workflow_data: Dict[str, Any]):
+        """Step 4: Save content to memory database"""
+        redis_conn = await self._get_redis()
+        
+        formatted_content = workflow_data.get("formatted_content") or workflow_data["original_content"]
+        category = workflow_data.get("category", "general")
+        original_content = workflow_data["original_content"]
+        
+        # Generate title from original content
+        title = original_content[:50] + "..." if len(original_content) > 50 else original_content
+        
+        # Parse category properties
+        try:
+            category_properties = json.loads(workflow_data.get("category_properties", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            category_properties = {}
+        
+        # Use existing tool
+        input_data = SaveMemoryInput(
+            item_type="general",
+            title=title,
+            content=formatted_content,
+            properties=category_properties,
+            category=category
+        )
+        result = await save_memory_tool(input_data)
+        
+        # Update Redis hash
+        await redis_conn.hset(workflow_id, mapping={
+            "memory_id": result.id,
+            "final_title": result.title,
+            "save_result": f"Saved with ID: {result.id}"
+        })
+        
+        print(f"   💾 Saved with ID: {result.id}")
+
+# Global instance
+redis_orchestrator = RedisWorkflowOrchestrator() 

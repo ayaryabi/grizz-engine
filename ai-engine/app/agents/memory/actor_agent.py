@@ -73,6 +73,37 @@ async def save_content_tool(title: str, content: str, category: str, item_type: 
     return f"{result.title}|{result.id}"
 
 @function_tool
+async def save_memory_database_tool(
+    title: str, 
+    content: str, 
+    category: str, 
+    item_type: str = "unknown",
+    properties: str = "{}"
+) -> str:
+    """Direct access to save_memory_tool from memory_tools.py - saves to database and returns JSON result"""
+    try:
+        import json
+        properties_dict = json.loads(properties) if properties else {}
+    except:
+        properties_dict = {}
+    
+    input_data = SaveMemoryInput(
+        item_type=item_type,
+        title=title,
+        content=content,
+        properties=properties_dict,
+        category=category
+    )
+    result = await save_memory_tool(input_data)
+    
+    return json.dumps({
+        "success": result.success,
+        "title": result.title,
+        "id": result.id,
+        "message": result.message
+    })
+
+@function_tool
 async def execute_memory_plan(plan_json: str, content: str, title: str, item_type: str = "unknown") -> str:
     """Execute a structured memory plan with dependency resolution and parallelization"""
     
@@ -191,6 +222,18 @@ async def execute_memory_plan(plan_json: str, content: str, title: str, item_typ
         print(f"❌ {error_msg}")
         return error_msg
 
+@function_tool
+async def execute_workflow_from_redis(workflow_id: str) -> str:
+    """Execute workflow from Redis hash - eliminates massive string bottleneck"""
+    try:
+        from .redis_orchestrator import redis_orchestrator
+        result = await redis_orchestrator.execute_workflow(workflow_id)
+        return result
+    except Exception as e:
+        error_msg = f"Redis workflow execution failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        return error_msg
+
 # Pure Agent SDK agent for memory execution
 memory_actor_agent = Agent(
     name="Memory Actor Agent", 
@@ -198,16 +241,16 @@ memory_actor_agent = Agent(
     You are a memory execution agent. Your job is simple: execute the plan you receive.
     
     EXECUTION PATTERN:
-    1. Follow the plan steps in the exact order provided
-    2. For parallel steps, execute them efficiently  
-    3. Pass conversation context and user intent to tools when needed
-    4. Return structured results with the actual database ID
+    1. If you receive a Redis workflow ID (format: "Execute workflow from Redis hash: workflow:..."), use execute_workflow_from_redis tool
+    2. If you receive a structured plan, use the traditional execute_memory_plan tool
+    3. Return structured results with the actual database ID
     
     TOOL USAGE:
-    - summarize_content_tool: Pass content + conversation context + summary type
-    - format_content_tool: Pass content + item type
-    - categorize_content_tool: Pass content + conversation context + user intent + item type
-    - save_content_tool: Use processed results from previous steps
+    - execute_workflow_from_redis: For Redis hash-based workflows (preferred - faster)
+    - execute_memory_plan: For legacy structured plan execution
+    - save_memory_database_tool: Direct access to core database saving tool (always available)
+    - save_content_tool: Wrapper tool for simple saving
+    - Other tools: Use as needed for individual steps
     
     IMPORTANT: When save_content_tool returns "title|id", extract the ID and include it in your structured response.
     The save tool returns data like "My Title|abc123" - extract "abc123" as the memory_id.
@@ -216,6 +259,6 @@ memory_actor_agent = Agent(
     Always execute steps in dependency order and return the structured result.
     """,
     output_type=MemoryExecutionResult,  # ← Structured output!
-    model="gpt-4o-mini",  # Fast execution model
-    tools=[summarize_content_tool, format_content_tool, categorize_content_tool, save_content_tool]
+    model="gpt-4.1-mini-2025-04-14",  # Fast execution model
+    tools=[summarize_content_tool, format_content_tool, categorize_content_tool, save_content_tool, save_memory_database_tool, execute_memory_plan, execute_workflow_from_redis]
 ) 

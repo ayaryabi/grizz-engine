@@ -44,7 +44,7 @@ memory_agent = Agent(
     """,
     output_type=MemoryPlan,  # ← RESTORED: We DO want structured planning
     handoffs=[memory_actor_agent],
-    model="gpt-4o"
+    model="gpt-4.1-mini-2025-04-14"
 )
 
 class MemoryManager:
@@ -83,20 +83,15 @@ class MemoryManager:
             print(f"📋 Plan created: {execution_plan.plan_id}")
             print(f"📝 Steps: {len(execution_plan.steps)}")
             
-            # STEP 2: Execute plan using Memory Actor Agent  
-            print(f"\n⚡ Executing plan...")
-            execution_input = f"""
-            Execute this memory plan:
+            # STEP 2: Save plan to Redis hash instead of massive string transfer
+            print(f"\n⚡ Saving plan to Redis hash...")
+            from .redis_orchestrator import redis_orchestrator
             
-            Plan ID: {execution_plan.plan_id}
-            User Request: {execution_plan.user_request}
-            Original Message: {user_request}
+            plan_hash_key = await redis_orchestrator.save_plan_to_redis_hash(execution_plan, user_request)
             
-            Steps to execute:
-            {chr(10).join([f"{i+1}. {step.action} - {step.description}" for i, step in enumerate(execution_plan.steps)])}
-            
-            Follow the steps in order and use the available tools.
-            """
+            # STEP 3: Execute via Redis orchestrator (eliminates bottleneck)
+            print(f"\n⚡ Executing plan via Redis...")
+            execution_input = f"Execute workflow from Redis hash: {plan_hash_key}"
             
             execution_result = await Runner.run(memory_actor_agent, execution_input)
             execution_data = execution_result.final_output  # This is now MemoryExecutionResult!

@@ -14,16 +14,16 @@ class BaseGrizzAgent(Agent):
         # 🎯 Agent SDK handles model selection directly
         # Different model types for different agent purposes
         model_map = {
-            "chat": "gpt-4.1-mini",      # Fast chat
-            "planning": "gpt-4o",        # Smart planning  
-            "execution": "gpt-4o-mini",  # Fast execution
-            "vision": "gpt-4o"           # Multimodal
+            "chat": "gpt-4.1-mini-2025-04-14",      # Fast chat
+            "planning": "gpt-4.1-mini-2025-04-14",        # Smart planning  
+            "execution": "gpt-4.1-mini-2025-04-14",  # Fast execution
+            "vision": "gpt-4.1-mini-2025-04-14"           # Multimodal
         }
         
         # Initialize the parent Agent class directly
         super().__init__(
             name=name,
-            model=model_map.get(llm_type, "gpt-4o"),
+            model=model_map.get(llm_type, "gpt-4.1-mini-2025-04-14"),
             instructions=instructions,
             tools=tools or [],
             output_type=output_type
