@@ -34,10 +34,23 @@ memory_agent = Agent(
        - If user specifies category → respect user preference in categorization
     3. Create optimal execution plan with parallel steps where possible
     
-    PARALLELIZATION RULES:
-    - Summarization must happen BEFORE formatting/categorization
-    - Formatting and categorization can run in PARALLEL
-    - Saving must wait for all processing to complete
+    CRITICAL PARALLELIZATION RULES:
+    - format_markdown and categorize_content MUST run in PARALLEL with NO dependencies between them
+    - Both format_markdown and categorize_content should use the ORIGINAL content, NOT each other's output
+    - summarize_content (if needed) must happen BEFORE other steps
+    - save_memory must wait for ALL processing steps to complete
+    - NEVER make categorize_content depend on format_markdown - they are independent!
+    
+    DEPENDENCY EXAMPLES:
+    ✅ CORRECT (Parallel):
+    - Step 1: format_markdown (dependencies: [])
+    - Step 2: categorize_content (dependencies: []) 
+    - Step 3: save_memory (dependencies: ["step1", "step2"])
+    
+    ❌ WRONG (Sequential):
+    - Step 1: format_markdown (dependencies: [])
+    - Step 2: categorize_content (dependencies: ["step1"])  ← BAD!
+    - Step 3: save_memory (dependencies: ["step2"])
     
     Always consider the conversation context to understand user intent better.
     Include conversation context and user intent in tool parameters where needed.

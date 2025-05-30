@@ -58,10 +58,10 @@ class RedisWorkflowOrchestrator:
         return workflow_id
     
     async def execute_workflow(self, workflow_id: str) -> str:
-        """Execute complete workflow from Redis hash"""
+        """Execute complete workflow from Redis hash with parallel execution"""
         redis_conn = await self._get_redis()
         
-        print(f"🚀 Starting Redis Workflow Orchestrator")
+        print(f"🚀 Starting Redis Workflow Orchestrator (Parallel)")
         print(f"📋 Workflow ID: {workflow_id}")
         print("=" * 80)
         
@@ -77,8 +77,9 @@ class RedisWorkflowOrchestrator:
             
             print(f"📋 Plan loaded: {len(plan.steps)} steps")
             
-            # Execute steps with dependency resolution
+            # Execute steps with dependency resolution and parallelization
             completed_steps = set()
+            round_number = 1
             
             while len(completed_steps) < len(plan.steps):
                 # Get steps ready for execution
@@ -91,11 +92,41 @@ class RedisWorkflowOrchestrator:
                 if not ready_steps:
                     raise ValueError("Circular dependency or missing steps detected")
                 
-                # Execute ready steps (can be parallel if independent)
-                for step in ready_steps:
+                print(f"\n🔄 Round {round_number}: Found {len(ready_steps)} ready steps")
+                
+                # Execute ready steps - PARALLEL when possible!
+                if len(ready_steps) == 1:
+                    # Single step - execute normally
+                    step = ready_steps[0]
+                    print(f"🔧 Executing: {step.step_id} ({step.action})")
+                    step_start = time.time()
                     await self._execute_step(workflow_id, step)
+                    step_duration = time.time() - step_start
                     completed_steps.add(step.step_id)
-                    print(f"✅ Completed: {step.step_id}")
+                    print(f"✅ Completed {step.step_id} in {step_duration:.2f}s")
+                    
+                else:
+                    # Multiple independent steps - PARALLEL EXECUTION!
+                    print(f"⚡ Executing {len(ready_steps)} steps in PARALLEL:")
+                    for step in ready_steps:
+                        print(f"   🔧 {step.step_id} ({step.action})")
+                    
+                    # Create parallel tasks
+                    parallel_start = time.time()
+                    tasks = [self._execute_step(workflow_id, step) for step in ready_steps]
+                    
+                    # Execute all steps concurrently
+                    await asyncio.gather(*tasks)
+                    parallel_duration = time.time() - parallel_start
+                    
+                    # Mark all as completed
+                    for step in ready_steps:
+                        completed_steps.add(step.step_id)
+                    
+                    print(f"⚡ All {len(ready_steps)} parallel steps completed in {parallel_duration:.2f}s")
+                    print(f"💡 Parallel efficiency: {len(ready_steps)} steps in the time of 1!")
+                
+                round_number += 1
             
             # Mark as completed
             overall_time = time.time() - overall_start
@@ -105,51 +136,60 @@ class RedisWorkflowOrchestrator:
             })
             
             print("\n" + "=" * 80)
-            print("🎉 WORKFLOW COMPLETED SUCCESSFULLY!")
+            print("🎉 PARALLEL WORKFLOW COMPLETED SUCCESSFULLY!")
             print(f"⏱️  Total Time: {overall_time:.2f} seconds")
+            print(f"🚀 Executed in {round_number - 1} parallel rounds")
             
             # Get final results
             final_data = await redis_conn.hgetall(workflow_id)
             memory_id = final_data.get("memory_id", "unknown")
             category = final_data.get("category", "general")
             
-            return f"Workflow completed successfully. Memory ID: {memory_id}, Category: {category}"
+            return f"Parallel workflow completed successfully. Memory ID: {memory_id}, Category: {category}"
             
         except Exception as e:
             await redis_conn.hset(workflow_id, mapping={
                 "status": "failed",
                 "error": str(e)
             })
-            print(f"💥 WORKFLOW FAILED: {str(e)}")
+            print(f"💥 PARALLEL WORKFLOW FAILED: {str(e)}")
             raise
     
     async def _execute_step(self, workflow_id: str, step: PlanStep):
-        """Execute individual workflow step"""
+        """Execute individual workflow step with enhanced parallel logging"""
         redis_conn = await self._get_redis()
         
-        print(f"\n🔧 Starting Step: {step.step_id} ({step.action})")
+        print(f"🔧 Starting Step: {step.step_id} ({step.action})")
         step_start = time.time()
         
+        # Update current step tracking
         await redis_conn.hset(workflow_id, "current_step", step.step_id)
         
-        # Load current state
+        # Load current state once
         workflow_data = await redis_conn.hgetall(workflow_id)
         
-        if step.action == "format_markdown":
-            await self._step_format_content(workflow_id, workflow_data)
-        elif step.action == "summarize_content":
-            await self._step_summarize_content(workflow_id, workflow_data)
-        elif step.action == "categorize":
-            await self._step_categorize_content(workflow_id, workflow_data)
-        elif step.action == "save_memory":
-            await self._step_save_content(workflow_id, workflow_data)
-        else:
-            raise ValueError(f"Unknown action: {step.action}")
-        
-        step_duration = time.time() - step_start
-        print(f"   ✅ Completed {step.step_id} in {step_duration:.2f}s")
-        
-        await redis_conn.hset(workflow_id, "current_step", "none")
+        try:
+            if step.action == "format_markdown":
+                await self._step_format_content(workflow_id, workflow_data)
+            elif step.action == "summarize_content":
+                await self._step_summarize_content(workflow_id, workflow_data)
+            elif step.action == "categorize":
+                await self._step_categorize_content(workflow_id, workflow_data)
+            elif step.action == "save_memory":
+                await self._step_save_content(workflow_id, workflow_data)
+            else:
+                raise ValueError(f"Unknown action: {step.action}")
+            
+            step_duration = time.time() - step_start
+            print(f"✅ Completed {step.step_id} in {step_duration:.2f}s")
+            
+        except Exception as e:
+            step_duration = time.time() - step_start
+            print(f"❌ Failed {step.step_id} after {step_duration:.2f}s: {str(e)}")
+            raise
+        finally:
+            # Clear current step
+            await redis_conn.hset(workflow_id, "current_step", "none")
     
     async def _step_format_content(self, workflow_id: str, workflow_data: Dict[str, Any]):
         """Step 1: Format content using markdown formatter tool"""
