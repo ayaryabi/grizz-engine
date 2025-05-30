@@ -42,8 +42,7 @@ memory_agent = Agent(
     Always consider the conversation context to understand user intent better.
     Include conversation context and user intent in tool parameters where needed.
     """,
-    output_type=MemoryPlan,  # ← RESTORED: We DO want structured planning
-    handoffs=[memory_actor_agent],
+    output_type=MemoryPlan,  # ← PLANNING ONLY - returns MemoryPlan
     model="gpt-4.1-mini-2025-04-14"
 )
 

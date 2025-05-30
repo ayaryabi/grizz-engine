@@ -7,31 +7,25 @@ memory_manager = MemoryManager()
 
 @function_tool
 async def save_memory_content(
-    wrapper: RunContextWrapper[Any],
-    content: str = ""  # Fixed: no leading underscore
+    wrapper: RunContextWrapper[Any]
 ) -> str:
     """Save and organize information into memory with proper categorization and formatting. Use this when users want to save content, notes, ideas, or information for later retrieval."""
     try:
-        # Access the original user message from context
+        # Access the original user message from context wrapper
         original_message = wrapper.context.original_user_message
         
-        # Use the full planner→actor memory workflow with original message
+        # Use the Redis-optimized memory workflow with original message
         result = await memory_manager.process_memory_request(
-            user_request=original_message  # Just the original message - that's all we need!
+            user_request=original_message  # Full context from user message
         )
         
-        # Format the response from the planner→actor workflow
+        # Return minimal response - Chat Agent doesn't need details
         if result.get('success'):
-            return f"""**Memory Saved Successfully!**
-
-- **Category**: {result.get('category', 'General')}
-- **Content**: {result.get('title', 'Content')}
-- **Memory ID**: {result.get('id', 'No ID')}
-- **Tags**: {', '.join(result.get('tags', []))}
-
-Status: {result.get('execution_summary', 'Memory saved successfully.')}"""
+            memory_id = result.get('id', 'unknown')
+            category = result.get('category', 'general')
+            return f"✅ Content saved to memory! (ID: {memory_id[:8]}, Category: {category})"
         else:
-            return f"❌ Memory operation failed: {result.get('error', 'Unknown error occurred')}"
+            return f"❌ Failed to save content: {result.get('error', 'Unknown error')}"
                 
     except Exception as e:
-        return f"❌ Memory operation error: {str(e)}" 
+        return f"❌ Memory error: {str(e)}" 
