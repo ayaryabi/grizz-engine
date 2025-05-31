@@ -35,4 +35,19 @@ class SummarizationInput(BaseModel):
 class SummarizationOutput(BaseModel):
     """Output from summarization tool"""
     summarized_content: str = Field(description="The summarized content in markdown format")
-    success: bool = Field(description="Whether summarization was successful") 
+    success: bool = Field(description="Whether summarization was successful")
+
+class YouTubeTranscriptInput(BaseModel):
+    """Input for YouTube transcript extraction tool"""
+    video_url: str = Field(description="Clean YouTube video URL")
+    item_type: str = Field(default="youtube_video", description="Content type")
+
+class YouTubeTranscriptOutput(BaseModel):
+    """Output from YouTube transcript extraction tool"""
+    transcript: str = Field(description="Full video transcript")
+    video_title: str = Field(description="Video title")
+    video_id: str = Field(description="YouTube video ID")
+    channel: str = Field(default="", description="Channel name if available")
+    duration_text: str = Field(default="", description="Video duration")
+    success: bool = Field(description="Whether transcript extraction was successful")
+    error_message: str = Field(default="", description="Error message if failed") 

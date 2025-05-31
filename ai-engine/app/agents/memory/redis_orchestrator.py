@@ -7,7 +7,8 @@ from ...tools.markdown_tools import markdown_formatter_tool
 from ...tools.categorization_tools import categorization_tool
 from ...tools.memory_tools import save_memory_tool
 from ...tools.summarization_tools import summarization_tool
-from ...models.tools import MarkdownFormatInput, CategorizationInput, SummarizationInput
+from ...tools.youtube_tools import youtube_transcript_tool
+from ...models.tools import MarkdownFormatInput, CategorizationInput, SummarizationInput, YouTubeTranscriptInput
 from ...models.memory import SaveMemoryInput
 from ...core.redis_client import get_redis_pool
 
@@ -164,18 +165,27 @@ class RedisWorkflowOrchestrator:
         # Update current step tracking
         await redis_conn.hset(workflow_id, "current_step", step.step_id)
         
-        # Load current state once
-        workflow_data = await redis_conn.hgetall(workflow_id)
-        
         try:
             if step.action == "format_markdown":
+                # Load fresh data for this step
+                workflow_data = await redis_conn.hgetall(workflow_id)
                 await self._step_format_content(workflow_id, workflow_data)
             elif step.action == "summarize_content":
+                # Load fresh data for this step
+                workflow_data = await redis_conn.hgetall(workflow_id)
                 await self._step_summarize_content(workflow_id, workflow_data)
             elif step.action == "categorize":
+                # Load fresh data for this step
+                workflow_data = await redis_conn.hgetall(workflow_id)
                 await self._step_categorize_content(workflow_id, workflow_data)
             elif step.action == "save_memory":
+                # Load fresh data for this step (includes updates from previous steps!)
+                workflow_data = await redis_conn.hgetall(workflow_id)
                 await self._step_save_content(workflow_id, workflow_data)
+            elif step.action == "youtube_transcript":
+                # Load fresh data for this step
+                workflow_data = await redis_conn.hgetall(workflow_id)
+                await self._step_youtube_transcript(workflow_id, workflow_data)
             else:
                 raise ValueError(f"Unknown action: {step.action}")
             
@@ -194,7 +204,14 @@ class RedisWorkflowOrchestrator:
         """Step 1: Format content using markdown formatter tool"""
         redis_conn = await self._get_redis()
         
-        content = workflow_data["original_content"]
+        # Use transcript if available (YouTube workflow), otherwise use original content
+        transcript_data = workflow_data.get("transcript")
+        if transcript_data:
+            content = transcript_data
+            print(f"   📺 Using YouTube transcript ({len(content)} chars) for formatting")
+        else:
+            content = workflow_data["original_content"]
+            print(f"   📝 Using original content ({len(content)} chars) for formatting")
         
         # Use existing tool
         input_data = MarkdownFormatInput(
@@ -234,14 +251,21 @@ class RedisWorkflowOrchestrator:
         print(f"   📄 Summary: {len(result.summarized_content)} chars")
     
     async def _step_categorize_content(self, workflow_id: str, workflow_data: Dict[str, Any]):
-        """Step 3: Categorize formatted content"""
+        """Step 3: Categorize content"""
         redis_conn = await self._get_redis()
         
-        formatted_content = workflow_data.get("formatted_content") or workflow_data["original_content"]
+        # Use transcript if available (YouTube workflow), otherwise use original content
+        transcript_data = workflow_data.get("transcript")
+        if transcript_data:
+            content = transcript_data
+            print(f"   📺 Using YouTube transcript ({len(content)} chars) for categorization")
+        else:
+            content = workflow_data["original_content"]
+            print(f"   📝 Using original content ({len(content)} chars) for categorization")
         
         # Use existing tool
         input_data = CategorizationInput(
-            content=formatted_content,
+            content=content,
             item_type="general",
             existing_categories=[],
             conversation_context="",
@@ -292,6 +316,63 @@ class RedisWorkflowOrchestrator:
         })
         
         print(f"   💾 Saved with ID: {result.id}")
+
+    async def _step_youtube_transcript(self, workflow_id: str, workflow_data: Dict[str, Any]):
+        """Step 5: Extract YouTube video transcript using parameter-based approach"""
+        redis_conn = await self._get_redis()
+        
+        # Load the plan to get the step parameters
+        plan_data = json.loads(workflow_data["plan_json"])
+        plan = MemoryPlan(**plan_data)
+        
+        # Find the youtube_transcript step to get its parameters
+        youtube_step = None
+        for step in plan.steps:
+            if step.action == "youtube_transcript":
+                youtube_step = step
+                break
+        
+        if not youtube_step:
+            raise Exception("YouTube transcript step not found in plan")
+        
+        # Use video_url parameter if provided, otherwise fallback to parsing user message
+        video_url = None
+        if youtube_step.parameters:
+            try:
+                params = json.loads(youtube_step.parameters)
+                video_url = params.get("video_url")
+            except (json.JSONDecodeError, TypeError):
+                pass  # Fall back to extracting from message
+        
+        if not video_url:
+            # Fallback: extract from original content using the extractor
+            original_content = workflow_data["original_content"]
+            from ...tools.youtube_tools import YouTubeTranscriptExtractor
+            extractor = YouTubeTranscriptExtractor()
+            urls = extractor.find_youtube_urls(original_content)
+            if not urls:
+                raise Exception("No YouTube URL found in message or parameters")
+            video_url = urls[0]
+        
+        # Use YouTube tool with clean video_url parameter
+        input_data = YouTubeTranscriptInput(
+            video_url=video_url,
+            item_type="youtube_video"
+        )
+        result = await youtube_transcript_tool(input_data)
+        
+        if result.success:
+            # Update Redis hash with transcript for other steps to use
+            await redis_conn.hset(workflow_id, mapping={
+                "transcript": result.transcript,  # Save transcript for other steps
+                "transcript_length": str(len(result.transcript)),
+                "video_title": result.video_title,
+                "video_id": result.video_id
+            })
+            print(f"   📺 YouTube transcript: {len(result.transcript)} chars from video {result.video_id}")
+        else:
+            print(f"   ❌ YouTube failed: {result.error_message}")
+            raise Exception(f"YouTube transcript extraction failed: {result.error_message}")
 
 # Global instance
 redis_orchestrator = RedisWorkflowOrchestrator() 

@@ -74,7 +74,7 @@ class CategorizationAgent(BaseGrizzAgent):
         
         Categorize this content and extract properties:
 
-{input_data.content[:1000]}...
+{input_data.content}...
         """
         
         # Add conversation context if provided

@@ -9,21 +9,47 @@ class MarkdownFormatter(BaseGrizzAgent):
         super().__init__(
             name="Markdown Formatter",
             instructions="""
-            You are an expert at formatting content into clean, readable markdown.
+            You are a MINIMAL markdown formatter that preserves original content structure.
             
-            Your job is to:
-            1. Clean up the formatting
-            2. Add proper markdown structure (headers, lists, code blocks, etc.)
-            3. Make it look professional and readable
-            4. Preserve all important information
+            Your job is to apply VERY LIGHT formatting while preserving the original content:
             
-            For different content types:
-            - YouTube videos: Add title, create sections for main points
-            - Meeting transcripts: Organize by speaker, add timestamps if present
-            - Articles: Preserve structure, add proper headings
-            - Notes: Clean formatting, organize bullet points
+            **CORE PRINCIPLES:**
+            - PRESERVE original structure and content
+            - MINIMAL changes only - don't restructure content
+            - Keep the same length and detail level
+            - Don't add content that wasn't there
+            - Don't remove important information
             
-            Return ONLY the formatted markdown content, no explanations.
+            **For YOUTUBE VIDEOS:**
+            - Include timestamps if available in the transcript
+            - Format: [HH:MM:SS] or [MM:SS] followed by the content
+            - Keep all spoken content, just add basic structure
+            - Example: 
+              ```
+              [00:15] Next up, we have Jim Fan...
+              [02:30] So physical AI is about...
+              ```
+            
+            **For BLOG POSTS/ARTICLES:**
+            - Keep original paragraph structure
+            - Only add headers if they're clearly implied
+            - DON'T add bullet points if the original didn't have them
+            - DON'T restructure content into lists
+            - Preserve the author's writing style
+            
+            **For OTHER CONTENT:**
+            - Just clean up formatting
+            - Fix obvious markdown syntax issues
+            - Add basic headers only if very clear structure exists
+            
+            **WHAT NOT TO DO:**
+            - Don't add extensive bullet points
+            - Don't completely restructure the content
+            - Don't add sections that weren't in the original
+            - Don't summarize or condense content
+            - Don't change the writing style
+            
+            Return ONLY the minimally formatted content with preserved structure.
             """,
             llm_type="execution"  # Fast execution model
         )
