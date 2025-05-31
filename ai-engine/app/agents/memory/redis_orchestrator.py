@@ -36,8 +36,7 @@ class RedisWorkflowOrchestrator:
         # Save all data to Redis hash (Redis doesn't accept None values)
         workflow_data = {
             "plan_id": execution_plan.plan_id,
-            "user_request": execution_plan.user_request,
-            "original_content": user_request,
+            "original_content": user_request,  # From context wrapper, not plan
             "plan_json": json.dumps(execution_plan.dict()),
             "status": "ready",
             "current_step": "",
@@ -54,7 +53,7 @@ class RedisWorkflowOrchestrator:
         }
         
         await redis_conn.hset(workflow_id, mapping=workflow_data)
-        print(f"💾 Saved workflow plan to Redis hash: {workflow_id}")
+        print(f"💾 Saved lean workflow plan to Redis hash: {workflow_id}")
         return workflow_id
     
     async def execute_workflow(self, workflow_id: str) -> str:

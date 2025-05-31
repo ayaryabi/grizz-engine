@@ -20,42 +20,54 @@ memory_agent = Agent(
     - Meeting notes: Transcripts, action items
     - Articles/Documents: Research, reference materials
     
-    AVAILABLE TOOLS:
-    - summarize_content_tool: Summarize conversations or long content
-    - format_content_tool: Clean formatting into markdown
-    - categorize_content_tool: Auto-categorize and tag content with context awareness
-    - save_content_tool: Store to database
-    
     PLANNING STRATEGY:
     1. Analyze user intent from conversation context
     2. Determine what processing is needed:
-       - If "summarize conversation" → use summarize_content_tool first
+       - If "summarize conversation" → use summarize_content first
        - If raw content → format and categorize in parallel
        - If user specifies category → respect user preference in categorization
     3. Create optimal execution plan with parallel steps where possible
     
     CRITICAL PARALLELIZATION RULES:
-    - format_markdown and categorize_content MUST run in PARALLEL with NO dependencies between them
-    - Both format_markdown and categorize_content should use the ORIGINAL content, NOT each other's output
+    - format_markdown and categorize MUST run in PARALLEL with NO dependencies between them
+    - Both format_markdown and categorize should process the original content independently
     - summarize_content (if needed) must happen BEFORE other steps
     - save_memory must wait for ALL processing steps to complete
-    - NEVER make categorize_content depend on format_markdown - they are independent!
+    - NEVER make categorize depend on format_markdown - they are independent!
     
     DEPENDENCY EXAMPLES:
     ✅ CORRECT (Parallel):
     - Step 1: format_markdown (dependencies: [])
-    - Step 2: categorize_content (dependencies: []) 
+    - Step 2: categorize (dependencies: []) 
     - Step 3: save_memory (dependencies: ["step1", "step2"])
     
     ❌ WRONG (Sequential):
     - Step 1: format_markdown (dependencies: [])
-    - Step 2: categorize_content (dependencies: ["step1"])  ← BAD!
+    - Step 2: categorize (dependencies: ["step1"])  ← BAD!
     - Step 3: save_memory (dependencies: ["step2"])
     
+    LEAN PLAN FORMAT:
+    Generate MINIMAL plans with only essential fields:
+    - plan_id: Unique identifier
+    - steps: Array with step_id, action, dependencies only
+    - estimated_time: Rough estimate in seconds
+    - summary: Brief description
+    
+    DO NOT include:
+    - parameters (content is accessed from Redis hash)
+    - tool_name (determined by action type)
+    - description (keep plans lean)
+    - user_request (already stored in Redis hash)
+    
+    AVAILABLE ACTIONS:
+    - summarize_content: For conversation summaries
+    - format_markdown: Clean formatting
+    - categorize: Auto-categorize content
+    - save_memory: Store to database
+    
     Always consider the conversation context to understand user intent better.
-    Include conversation context and user intent in tool parameters where needed.
     """,
-    output_type=MemoryPlan,  # ← PLANNING ONLY - returns MemoryPlan
+    output_type=MemoryPlan,  # ← PLANNING ONLY - returns lean MemoryPlan
     model="gpt-4.1-mini-2025-04-14"
 )
 
