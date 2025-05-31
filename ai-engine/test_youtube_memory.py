@@ -104,7 +104,7 @@ async def test_youtube_memory():
     manager = MemoryManager()
     
     # Test with a YouTube URL that has transcripts
-    test_content = "Hey, save this programming tutorial for me: https://www.youtube.com/watch?v=_2NijXqBESI"
+    test_content = "Hey, save this programming tutorial for me: https://www.youtube.com/watch?v=T-_HKFjxVl0"
     
     print(f'📝 Test Content: {test_content}')
     print(f'🕐 Start Time: {datetime.now().strftime("%H:%M:%S")}')

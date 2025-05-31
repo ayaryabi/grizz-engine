@@ -49,8 +49,13 @@ class YouTubeTranscriptExtractor:
             video_url = input_data.video_url
             video_id = self.extract_video_id(video_url)
             
-            # Get transcript using youtube-transcript-api
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+            # Get transcript using youtube-transcript-api with language preference
+            try:
+                # Try English first (common language codes)
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
+            except Exception:
+                # Fallback: get any available transcript
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
             
             # Format transcript with timestamps (youtube-transcript-api provides start times)
             formatted_segments = []

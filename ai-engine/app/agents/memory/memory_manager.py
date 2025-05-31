@@ -101,6 +101,7 @@ class MemoryManager:
     async def process_memory_request(
         self, 
         user_request: str, 
+        user_id: str = None,  # Add user_id parameter
         **kwargs  # Accept any additional params but ignore them
     ) -> Dict[str, Any]:
         """
@@ -108,6 +109,7 @@ class MemoryManager:
         
         Args:
             user_request: The original user message with full intent and content
+            user_id: User ID for database operations
             
         Returns:
             Dict with success status and result details
@@ -116,6 +118,7 @@ class MemoryManager:
         try:
             print(f"🎯 Starting memory workflow...")
             print(f"   📝 Request: {user_request}")
+            print(f"   👤 User ID: {user_id}")
             
             # STEP 1: Let Memory Agent analyze the original message directly
             print(f"\n🧠 Creating execution plan...")
@@ -135,7 +138,12 @@ class MemoryManager:
             print(f"\n⚡ Saving plan to Redis hash...")
             from .redis_orchestrator import redis_orchestrator
             
-            plan_hash_key = await redis_orchestrator.save_plan_to_redis_hash(execution_plan, user_request)
+            # Pass user_id to Redis orchestrator
+            plan_hash_key = await redis_orchestrator.save_plan_to_redis_hash(
+                execution_plan, 
+                user_request,
+                user_id=user_id  # Add user_id parameter
+            )
             
             # STEP 3: Execute via Redis orchestrator (eliminates bottleneck)
             print(f"\n⚡ Executing plan via Redis...")

@@ -28,7 +28,7 @@ class RedisWorkflowOrchestrator:
             self.redis_conn = await get_redis_pool()
         return self.redis_conn
     
-    async def save_plan_to_redis_hash(self, execution_plan: MemoryPlan, user_request: str) -> str:
+    async def save_plan_to_redis_hash(self, execution_plan: MemoryPlan, user_request: str, user_id: str = None) -> str:
         """Save plan and content to Redis hash, return hash key"""
         redis_conn = await self._get_redis()
         
@@ -38,6 +38,7 @@ class RedisWorkflowOrchestrator:
         workflow_data = {
             "plan_id": execution_plan.plan_id,
             "original_content": user_request,  # From context wrapper, not plan
+            "user_id": user_id or "",  # Add user_id to workflow data
             "plan_json": json.dumps(execution_plan.dict()),
             "status": "ready",
             "current_step": "",
@@ -55,6 +56,7 @@ class RedisWorkflowOrchestrator:
         
         await redis_conn.hset(workflow_id, mapping=workflow_data)
         print(f"💾 Saved lean workflow plan to Redis hash: {workflow_id}")
+        print(f"👤 User ID in workflow: {user_id}")
         return workflow_id
     
     async def execute_workflow(self, workflow_id: str) -> str:
@@ -285,6 +287,8 @@ class RedisWorkflowOrchestrator:
         """Step 4: Save content to memory database"""
         redis_conn = await self._get_redis()
         
+        # Get user_id from workflow data
+        user_id = workflow_data.get("user_id", "")
         formatted_content = workflow_data.get("formatted_content") or workflow_data["original_content"]
         category = workflow_data.get("category", "general")
         original_content = workflow_data["original_content"]
@@ -298,7 +302,7 @@ class RedisWorkflowOrchestrator:
         except (json.JSONDecodeError, TypeError):
             category_properties = {}
         
-        # Use existing tool
+        # Use existing tool with user_id
         input_data = SaveMemoryInput(
             item_type="general",
             title=title,
@@ -316,6 +320,7 @@ class RedisWorkflowOrchestrator:
         })
         
         print(f"   💾 Saved with ID: {result.id}")
+        print(f"   👤 User ID used: {user_id}")
 
     async def _step_youtube_transcript(self, workflow_id: str, workflow_data: Dict[str, Any]):
         """Step 5: Extract YouTube video transcript using parameter-based approach"""

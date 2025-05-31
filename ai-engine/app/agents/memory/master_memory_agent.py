@@ -14,9 +14,13 @@ async def save_memory_content(
         # Access the original user message from context wrapper
         original_message = wrapper.context.original_user_message
         
-        # Use the Redis-optimized memory workflow with original message
+        # EXTRACT USER_ID from context wrapper
+        user_id = wrapper.context.user_id
+        
+        # Use the Redis-optimized memory workflow with original message AND user_id
         result = await memory_manager.process_memory_request(
-            user_request=original_message  # Full context from user message
+            user_request=original_message,  # Full context from user message
+            user_id=user_id  # Add user_id parameter
         )
         
         # Return minimal response - Chat Agent doesn't need details
