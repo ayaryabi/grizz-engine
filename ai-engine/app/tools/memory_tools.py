@@ -34,7 +34,8 @@ class SaveMemoryTool:
                 title=input_data.title,
                 content=input_data.content,
                 category=category,
-                item_type="note"  # Default for now
+                item_type="note",
+                properties=input_data.properties  # Pass the rich metadata!
             )
             
             if result["success"]:

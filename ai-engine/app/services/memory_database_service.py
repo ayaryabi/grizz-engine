@@ -12,7 +12,8 @@ async def save_memory_to_database(
     title: str,
     content: str,
     category: str,
-    item_type: str = "note"
+    item_type: str = "note",
+    properties: Dict[str, Any] = None
 ) -> Dict[str, Any]:
     """
     Save a memory to the database and return result dict.
@@ -23,6 +24,7 @@ async def save_memory_to_database(
         content: Memory content (markdown)
         category: Memory category for properties
         item_type: Type of memory item (default: "note")
+        properties: Rich metadata properties (author, date, tags, etc.)
         
     Returns:
         Dict: {
@@ -33,13 +35,16 @@ async def save_memory_to_database(
     """
     try:
         async with async_session_maker() as db:
+            # Use rich properties if provided, fallback to basic category
+            final_properties = properties or {"category": category}
+            
             # Create new memory record with minimal required fields
             memory = Memory(
                 user_id=UUID(user_id),
                 item_type=item_type,
                 title=title,
                 content=content,
-                properties={"category": category}
+                properties=final_properties
                 # Skip visibility and moderation_status to avoid enum issues
             )
             
