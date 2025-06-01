@@ -302,7 +302,7 @@ class RedisWorkflowOrchestrator:
         except (json.JSONDecodeError, TypeError):
             category_properties = {}
         
-        # Use existing tool with user_id
+        # Use existing tool with user_id and category
         input_data = SaveMemoryInput(
             item_type="general",
             title=title,
@@ -310,7 +310,9 @@ class RedisWorkflowOrchestrator:
             properties=category_properties,
             category=category
         )
-        result = await save_memory_tool(input_data)
+        
+        # Call save tool with user_id and category
+        result = await save_memory_tool(input_data, user_id, category)
         
         # Update Redis hash
         await redis_conn.hset(workflow_id, mapping={
@@ -321,6 +323,7 @@ class RedisWorkflowOrchestrator:
         
         print(f"   💾 Saved with ID: {result.id}")
         print(f"   👤 User ID used: {user_id}")
+        print(f"   🏷️  Category used: {category}")
 
     async def _step_youtube_transcript(self, workflow_id: str, workflow_data: Dict[str, Any]):
         """Step 5: Extract YouTube video transcript using parameter-based approach"""

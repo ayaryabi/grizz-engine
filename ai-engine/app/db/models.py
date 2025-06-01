@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey, DateTime, Date, Index
+from sqlalchemy import Column, String, Text, ForeignKey, DateTime, Date, Index, Boolean
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -44,4 +44,26 @@ class Message(Base):
     # Add index for faster querying by conversation_id
     __table_args__ = (
         Index('idx_message_conversation_id', 'conversation_id'),
+    )
+
+class Memory(Base):
+    __tablename__ = "memory"
+
+    id = Column(UUID, primary_key=True, server_default=func.gen_random_uuid())
+    user_id = Column(UUID, nullable=False)
+    item_type = Column(Text, nullable=False, default="note")
+    title = Column(Text, nullable=True)
+    content = Column(Text, nullable=True)  # Changed to TEXT as requested
+    properties = Column(JSONB, nullable=True, default=lambda: {})
+    file_url = Column(Text, nullable=True)
+    mime_type = Column(Text, nullable=True)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Add indices for faster querying
+    __table_args__ = (
+        Index('idx_memory_user_id', 'user_id'),
+        Index('idx_memory_user_created', 'user_id', 'created_at'),
+        Index('idx_memory_item_type', 'item_type'),
     )

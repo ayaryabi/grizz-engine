@@ -46,7 +46,9 @@ At any given time, you're probably happiest on the main branches of an evolution
     start_time = asyncio.get_event_loop().time()
     
     try:
-        result = await manager.process_memory_request(test_content)
+        # Add user_id parameter to the memory manager call
+        test_user_id = "6b9b58d8-b648-48d9-b431-70af03d7502b"
+        result = await manager.process_memory_request(test_content, user_id=test_user_id)
         
         end_time = asyncio.get_event_loop().time()
         total_time = end_time - start_time
