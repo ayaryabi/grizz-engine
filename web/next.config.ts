@@ -1,7 +1,8 @@
+import withPWA from 'next-pwa';
 import {withSentryConfig} from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
+const baseConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
@@ -14,7 +15,12 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
+const pwaWrappedConfig = withPWA({
+  dest: 'public',
+  disable: process.env.NODE_ENV === 'development',
+})(baseConfig);
+
+export default withSentryConfig(pwaWrappedConfig, {
 // For all available options, see:
 // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
