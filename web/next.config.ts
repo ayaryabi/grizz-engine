@@ -18,6 +18,11 @@ const baseConfig: NextConfig = {
 const pwaWrappedConfig = withPWA({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
+  register: true,
+  skipWaiting: false,
+  reloadOnOnline: false,
+  scope: '/',
+  sw: 'sw.js',
 })(baseConfig);
 
 export default withSentryConfig(pwaWrappedConfig, {
@@ -49,5 +54,5 @@ disableLogger: true,
 // See the following for more information:
 // https://docs.sentry.io/product/crons/
 // https://vercel.com/docs/cron-jobs
-automaticVercelMonitors: true,
+automaticVercelMonitors: false,
 });
