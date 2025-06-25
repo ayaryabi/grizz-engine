@@ -38,6 +38,8 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   const isConnectingRef = useRef<boolean>(false); // Prevent multiple simultaneous connections
   const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
   const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+  // Flag to mark when we purposely close an existing socket so onclose doesn't trigger a reconnection loop
+  const intentionalCloseRef = useRef<boolean>(false);
 
   const { data: msgPages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(conversationId || undefined);
 
@@ -154,8 +156,9 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     // Set connecting flag
     isConnectingRef.current = true;
 
-    // Close existing connection if any
+    // Close existing connection if any (intentional)
     if (wsRef.current) {
+      intentionalCloseRef.current = true;
       wsRef.current.close();
     }
 
@@ -209,8 +212,10 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
       isConnectingRef.current = false; // Clear connecting flag on close
       stopPingInterval();
       
-      // Attempt reconnection if we should reconnect and tab is active
-      if (shouldReconnectRef.current && isActiveTabRef.current) {
+      // If we intentionally closed the socket, skip auto-reconnect once
+      if (intentionalCloseRef.current) {
+        intentionalCloseRef.current = false;
+      } else if (shouldReconnectRef.current && isActiveTabRef.current) {
         attemptReconnection();
       }
     };
