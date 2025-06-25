@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useRef, useLayoutEffect } from 'react';
 import ChatMessageInput from './ChatMessageInput';
 import ChatMessageList from './ChatMessageList';
 import { useChat } from '@/features/chat/hooks/useChat';
@@ -20,6 +20,32 @@ export default function ChatView({ conversationId }: ChatViewProps) {
   // Debounce connection status to prevent flashing
   const [showDisconnected, setShowDisconnected] = React.useState(false);
   
+  const outerRef = useRef<HTMLDivElement>(null);
+  const prevHeightRef = useRef<number>(0);
+
+  // auto-scroll logic
+  useLayoutEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+
+    const initialLoad = prevHeightRef.current === 0;
+    const wasAtBottom =
+      el.scrollTop + el.clientHeight >= prevHeightRef.current - 10;
+
+    if (initialLoad || wasAtBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+
+    prevHeightRef.current = el.scrollHeight;
+  }, [messages]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop === 0 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  };
+
   React.useEffect(() => {
     if (!isConnected && !loading && !isReconnecting) {
       // Show disconnected message after a short delay to avoid flashing during normal reconnection
@@ -35,9 +61,9 @@ export default function ChatView({ conversationId }: ChatViewProps) {
     <div className="flex flex-col h-full w-full">
       
       {/* Message display area */}
-      <div className="flex-1 overflow-y-auto w-full pb-4">
+      <div className="flex-1 overflow-y-auto w-full pb-4" ref={outerRef} onScroll={handleScroll}>
         <div className="max-w-3xl mx-auto w-full p-4 sm:p-6 space-y-4">
-          <ChatMessageList messages={messages} fetchNextPage={fetchNextPage} hasNextPage={hasNextPage} isFetchingNextPage={isFetchingNextPage} />
+          <ChatMessageList messages={messages} />
           {loading && (
             <p className="text-sm text-muted-foreground text-center">Loading conversation...</p>
           )}

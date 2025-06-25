@@ -23,6 +23,15 @@ function dbRowToMessage(row: DBRow): Message {
     text: row.content,
     sender: row.role === "assistant" ? "ai" : "user",
     timestamp: row.created_at,
+    files: Array.isArray((row.metadata as any)?.file_urls)
+      ? (row.metadata as any).file_urls.map((url: string) => ({
+          id: url,
+          url,
+          name: url.split("/").pop() ?? "file",
+          size: 0,
+          type: "image",
+        }))
+      : undefined,
   };
 }
 
