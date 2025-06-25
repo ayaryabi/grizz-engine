@@ -41,6 +41,9 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   // Flag to mark when we purposely close an existing socket so onclose doesn't trigger a reconnection loop
   const intentionalCloseRef = useRef<boolean>(false);
 
+  // Track which local calendar day the current conversation belongs to
+  const currentConvDayRef = useRef<string | null>(null);
+
   const { data: msgPages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(conversationId || undefined);
 
   // Seed messages from history pages (only once or when conversationId changes)
@@ -87,6 +90,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
             if (date === userToday && cachedId) {
               console.log('Today conversation loaded from cache:', cachedId);
               setConversationId(cachedId);
+              currentConvDayRef.current = userToday; // remember day for rollover checks
               setLoading(false);
               return;
             }
@@ -115,6 +119,9 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         const data = await response.json();
         console.log('Today conversation fetched:', data);
         setConversationId(data.id);
+        
+        // Remember the day string for midnight rollover detection
+        currentConvDayRef.current = userToday;
         
         // Store in cache for future same-day visits
         localStorage.setItem(cacheKey, JSON.stringify({
@@ -389,7 +396,78 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     };
   }, [conversationId, session?.access_token, connectWebSocket]);
 
+  /**
+   * Ensure we are talking to the correct "today" conversation. If the calendar
+   * day changed since the last message we fetched, get /api/chat/today again
+   * and transparently switch WebSocket + state before the next send.
+   */
+  const ensureCurrentConversation = useCallback(async () => {
+    if (!session?.access_token) return;
+
+    const todayStr = new Date().toLocaleDateString();
+    if (currentConvDayRef.current === todayStr) return; // still same day
+
+    try {
+      console.log('[Midnight rollover] Fetching new conversation for new day');
+
+      const response = await fetch('/api/chat/today', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch new-day conversation');
+
+      const data = await response.json();
+
+      // Close existing socket so we can open one bound to the new ID
+      if (wsRef.current) {
+        intentionalCloseRef.current = true;
+        wsRef.current.close();
+      }
+
+      // Update state & cached key
+      setConversationId(data.id);
+      currentConvDayRef.current = todayStr;
+
+      const cacheKey = `conversation_${session.user?.id}_${todayStr}`;
+      localStorage.setItem(cacheKey, JSON.stringify({
+        conversationId: data.id,
+        date: todayStr
+      }));
+
+      // Establish new WebSocket connection for the fresh conversation
+      connectWebSocket();
+
+      // Wait until the socket is open before returning (max 1s)
+      await new Promise<void>((resolve) => {
+        const start = Date.now();
+        const check = () => {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            resolve();
+          } else if (Date.now() - start > 1000) {
+            // give up after 1s; message will be queued in send attempt below
+            resolve();
+          } else {
+            setTimeout(check, 50);
+          }
+        };
+        check();
+      });
+    } catch (err) {
+      console.error('Error during midnight rollover handling:', err);
+    }
+  }, [session?.access_token, connectWebSocket]);
+
   const sendMessage = async (text: string, files?: FileAttachment[]) => {
+    // Ensure we are on the correct day/conversation before doing anything else
+    await ensureCurrentConversation();
+    
     // Reset the current message ID so a new AI message will be created
     currentMessageIdRef.current = null;
     
