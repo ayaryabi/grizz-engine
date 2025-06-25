@@ -21,7 +21,7 @@ interface ChatMessageProps {
 }
 
 const FileAttachmentDisplay: React.FC<{ file: FileAttachment }> = ({ file }) => {
-  const isImage = file.type.startsWith('image/');
+  const isImage = file.type.startsWith('image');
   
   // Always call hooks at the top level - React Rules of Hooks
   const [previewUrl, setPreviewUrl] = React.useState<string>();
