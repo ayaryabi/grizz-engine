@@ -6,9 +6,12 @@ import { Message } from '@/lib/types';
 
 interface ChatMessageListProps {
   messages: Message[];
+  fetchNextPage: () => void;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
 }
 
-const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages }) => {
+const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, fetchNextPage, hasNextPage, isFetchingNextPage }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -17,8 +20,15 @@ const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages }) => {
     }
   }, [messages]);
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop === 0 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  };
+
   return (
-    <div ref={scrollRef} className="flex-grow overflow-y-auto p-4 space-y-2 bg-background">
+    <div ref={scrollRef} onScroll={handleScroll} className="flex-grow overflow-y-auto p-4 space-y-2 bg-background">
       {messages.map((msg) => (
         <ChatMessage key={msg.id} message={msg} />
       ))}

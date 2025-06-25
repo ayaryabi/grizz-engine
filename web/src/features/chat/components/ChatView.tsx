@@ -3,7 +3,7 @@
 import React from 'react';
 import ChatMessageInput from './ChatMessageInput';
 import ChatMessageList from './ChatMessageList';
-import { useChat } from '@/lib/hooks/useChat';
+import { useChat } from '@/features/chat/hooks/useChat';
 
 // Later, we'll import MessageList and ChatInput here
 // import MessageList from './MessageList';
@@ -15,7 +15,7 @@ interface ChatViewProps {
 
 export default function ChatView({ conversationId }: ChatViewProps) {
   // If conversationId is provided, use it, otherwise let useChat use its default "test"
-  const { messages, isConnected, sendMessage, loading, isReconnecting } = useChat(conversationId ? { conversationId } : {});
+  const { messages, isConnected, sendMessage, loading, isReconnecting, fetchNextPage, hasNextPage, isFetchingNextPage } = useChat(conversationId ? { conversationId } : {});
   
   // Debounce connection status to prevent flashing
   const [showDisconnected, setShowDisconnected] = React.useState(false);
@@ -37,7 +37,7 @@ export default function ChatView({ conversationId }: ChatViewProps) {
       {/* Message display area */}
       <div className="flex-1 overflow-y-auto w-full pb-4">
         <div className="max-w-3xl mx-auto w-full p-4 sm:p-6 space-y-4">
-          <ChatMessageList messages={messages} />
+          <ChatMessageList messages={messages} fetchNextPage={fetchNextPage} hasNextPage={hasNextPage} isFetchingNextPage={isFetchingNextPage} />
           {loading && (
             <p className="text-sm text-muted-foreground text-center">Loading conversation...</p>
           )}

@@ -3,4 +3,4 @@ description:
 globs: 
 alwaysApply: true
 ---
-when starting coding stay commited only to that speicifc task or project. Do not attempt to change or edit code that are not realted to the task or project. stay focused and write clean code.
+when starting coding stay commited only to that speicifc task or project. Do not attempt to change or edit code that are not realted to the task or project. stay focused and write clean code. DO NOT CHANGE ANY OTHER CODES THAT ARE NOT RELEVANT TO THIS PROEJCT OR FEATURE THAT WE ARE BULIDING. ASK YOURSELF EVERY TIME YOU PLAN TO DO ANY EDITS

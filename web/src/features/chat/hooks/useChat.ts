@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Message, FileAttachment } from '@/lib/types';
 import { useAuth } from '@/features/auth/AuthContext';
+import { useMessages } from "./useMessages";
+import { dedupMessages } from "./dedupMessages";
 
 type UseChatProps = {
   conversationId?: string | null;
@@ -13,6 +15,10 @@ type UseChatReturn = {
   sendMessage: (text: string, files?: FileAttachment[]) => void;
   loading: boolean;
   isReconnecting: boolean;
+  // paging
+  fetchNextPage: () => void;
+  hasNextPage: boolean | undefined;
+  isFetchingNextPage: boolean;
 };
 
 export function useChat({ conversationId: propConversationId }: UseChatProps = {}): UseChatReturn {
@@ -32,6 +38,19 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   const isConnectingRef = useRef<boolean>(false); // Prevent multiple simultaneous connections
   const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
   const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
+
+  const { data: msgPages, fetchNextPage, hasNextPage, isFetchingNextPage } = useMessages(conversationId || undefined);
+
+  // Seed messages from history pages (only once or when conversationId changes)
+  useEffect(() => {
+    if (msgPages) {
+      const flat = msgPages.pages.flatMap((p) => p.rows);
+      setMessages((prev) => {
+        if (prev.length === 0) return flat;
+        return dedupMessages([...prev, ...flat]);
+      });
+    }
+  }, [msgPages]);
 
   // Fetch today's conversation if no conversation ID is provided
   useEffect(() => {
@@ -450,6 +469,10 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     isConnected,
     sendMessage,
     loading,
-    isReconnecting
+    isReconnecting,
+    // paging
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
   };
 } 
