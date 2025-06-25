@@ -33,7 +33,14 @@ export default function ChatView({ conversationId }: ChatViewProps) {
       el.scrollTop + el.clientHeight >= prevHeightRef.current - 10;
 
     if (initialLoad || wasAtBottom) {
+      // Auto-scroll to bottom when first load or user was already at bottom
       el.scrollTop = el.scrollHeight;
+    } else {
+      // If user is at top and older messages got prepended, keep viewport steady
+      if (el.scrollTop === 0 && el.scrollHeight > prevHeightRef.current) {
+        const diff = el.scrollHeight - prevHeightRef.current;
+        el.scrollTop = diff;
+      }
     }
 
     prevHeightRef.current = el.scrollHeight;
