@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ArrowUp, Paperclip, X, FileIcon } from "lucide-react";
-import { useAuth } from '@/features/auth/AuthContext';
+import { useMessageComposer } from '@/features/chat/hooks/useMessageComposer';
 
 import { FileAttachment } from '@/lib/types';
 
@@ -21,9 +21,16 @@ interface FilePreview {
 }
 
 export default function ChatMessageInput({ onSendMessage, isLoading = false, disabled = false }: ChatMessageInputProps) {
-  const { user } = useAuth();
-  const [inputText, setInputText] = useState("");
-  const [selectedFiles, setSelectedFiles] = useState<FilePreview[]>([]);
+  // Business logic handled by the composer hook
+  const {
+    inputText,
+    setInputText,
+    selectedFiles,
+    addFiles,
+    removeFile,
+    handleSend,
+  } = useMessageComposer(onSendMessage);
+
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,24 +56,8 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
     adjustTextareaHeight();
   }, [inputText]);
 
-  const createFilePreview = (file: File): FilePreview => {
-    const preview: FilePreview = {
-      file,
-      id: Math.random().toString(36).substr(2, 9),
-    };
-
-    // Create image preview for image files
-    if (file.type.startsWith('image/')) {
-      preview.preview = URL.createObjectURL(file);
-    }
-
-    return preview;
-  };
-
   const handleFileSelect = (files: FileList) => {
-    const fileArray = Array.from(files);
-    const newPreviews = fileArray.map(createFilePreview);
-    setSelectedFiles(prev => [...prev, ...newPreviews]);
+    addFiles(files);
   };
 
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -79,61 +70,11 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
     }
   };
 
-  const handleSend = () => {
-    const trimmedInput = inputText.trim();
-    if (!trimmedInput && selectedFiles.length === 0) return;
-
-    if (!user?.id) {
-      alert('Please log in to send messages with files.');
-      return;
-    }
-
-    // Create FileAttachment objects for optimistic display
-    const fileAttachments: FileAttachment[] = selectedFiles.map(fp => ({
-      id: fp.id,
-      file: fp.file,
-      name: fp.file.name,
-      size: fp.file.size,
-      type: fp.file.type,
-      uploading: true
-    }));
-
-    // Send message immediately for optimistic UI
-    onSendMessage(trimmedInput, fileAttachments.length > 0 ? fileAttachments : undefined);
-    
-    // Clear input and files
-    setInputText("");
-    setSelectedFiles(prev => {
-      // Clean up object URLs
-      prev.forEach(fp => {
-        if (fp.preview) {
-          URL.revokeObjectURL(fp.preview);
-        }
-      });
-      return [];
-    });
-    
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-  };
-
   const handleKeyPress = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       handleSend();
     }
-  };
-
-  const removeFile = (idToRemove: string) => {
-    setSelectedFiles(prev => {
-      const updated = prev.filter(fp => fp.id !== idToRemove);
-      const removedFile = prev.find(fp => fp.id === idToRemove);
-      if (removedFile?.preview) {
-        URL.revokeObjectURL(removedFile.preview);
-      }
-      return updated;
-    });
   };
 
   // Drag and drop handlers
@@ -194,7 +135,7 @@ export default function ChatMessageInput({ onSendMessage, isLoading = false, dis
         <div className="mb-3 space-y-2">
           <p className="text-xs text-muted-foreground font-medium">Files to upload ({selectedFiles.length}):</p>
           <div className="flex flex-wrap gap-2">
-            {selectedFiles.map((filePreview) => (
+            {selectedFiles.map((filePreview: FilePreview) => (
               <div key={filePreview.id} className="flex items-center gap-2 bg-muted px-3 py-2 rounded-lg border">
                 {filePreview.preview ? (
                   <img 
