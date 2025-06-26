@@ -17,7 +17,7 @@ const baseConfig: NextConfig = {
 
 const pwaWrappedConfig = withPWA({
   dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
+  disable: true,
   register: true,
   skipWaiting: false,
   reloadOnOnline: false,

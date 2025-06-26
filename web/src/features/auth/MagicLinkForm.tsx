@@ -79,7 +79,7 @@ export function MagicLinkForm() {
           {stage === 'email' ? 'Sign In / Sign Up' : 'Enter the Code'}
         </CardTitle>
         {stage === 'email' ? (
-          <CardDescription className="text-sm">We'll send a 6-digit code to your inbox.</CardDescription>
+          <CardDescription className="text-sm">We&apos;ll send a 6-digit code to your inbox.</CardDescription>
         ) : (
           <CardDescription className="text-sm">Check your e-mail (<span className="font-medium">{email}</span>)</CardDescription>
         )}
@@ -130,7 +130,7 @@ export function MagicLinkForm() {
               {loading ? 'Verifying…' : 'Verify & Continue'}
             </Button>
             <p className="text-xs text-center text-muted-foreground">
-              Didn't get it?{' '}
+              Didn&apos;t get it?{' '}
               <button
                 type="button"
                 className="underline"

@@ -4,14 +4,23 @@ import { Message } from "@/lib/types";
 
 const PAGE_SIZE = 20; // load bigger chunks for smoother scroll
 
-function dbRowToMessage(row: any): Message {
+interface DBRow {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  metadata?: { file_urls?: string[] } | null;
+}
+
+function dbRowToMessage(row: DBRow): Message {
+  const meta = row.metadata;
   return {
     id: row.id,
     text: row.content,
     sender: row.role === "assistant" ? "ai" : "user",
     timestamp: row.created_at,
-    files: Array.isArray(row.metadata?.file_urls)
-      ? row.metadata.file_urls.map((url: string) => ({
+    files: Array.isArray(meta?.file_urls)
+      ? meta!.file_urls!.map((url) => ({
           id: url,
           url,
           name: url.split("/").pop() ?? "file",
