@@ -9,12 +9,12 @@
 ### **Frontend/UX Tasks (Start Here)**
 - ✅ Markdown formatting design
 - ✅ Media upload code refactoring  
-- ✅ React Query for message history
-- ✅ Emoji reactions system
-- ✅ Fix reconnection/ping-pong issues
+- ✅ React Query for message history (done)
+- ✅ Emoji reactions system 
+- ✅ Fix reconnection/ping-pong issues (done)
 - ✅ Redesign message input component
-- ✅ PWA setup (add to homescreen)
-- ✅ Password auth + magic links
+- ✅ PWA setup (done)
+- ✅ Password auth + magic links 
 - ✅ Mobile optimization
 - ✅ Theme & font improvements
 - ✅ Payment integration

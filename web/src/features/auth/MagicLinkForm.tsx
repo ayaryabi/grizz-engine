@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabase/supabase'; // Adjust import path based on your alias setup
+import { supabase } from '@/lib/supabase/supabase';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,36 +12,62 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useRouter } from 'next/navigation';
 
 export function MagicLinkForm() {
+  const [stage, setStage] = useState<'email' | 'code'>('email');
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const router = useRouter();
 
-  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const sendCode = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     setLoading(true);
-    setMessage('');
     setErrorMsg('');
 
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        email: email,
+        email,
         options: {
-          // set this to localhost for testing or your main URL for production
-          emailRedirectTo: window.location.origin, 
+          shouldCreateUser: true, // sign-up if new
         },
       });
-
       if (error) throw error;
 
-      setMessage('Check your email for the magic link!');
-      setEmail(''); // Clear input on success
+      setStage('code');
+      setInfoMsg('We just emailed you a 6-digit code. Enter it below.');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Unable to send code');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send magic link';
-      setErrorMsg(errorMessage);
+  const verifyCode = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: 'email', // verify sign-in / sign-up email OTP
+      });
+      if (error) throw error;
+
+      // Supabase returned a session; AuthContext listener will redirect.
+      setInfoMsg('Logged in! Redirecting…');
+      // Small delay to show the message
+      setTimeout(() => {
+        router.replace('/');
+      }, 500);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Invalid code');
+    } finally {
       setLoading(false);
     }
   };
@@ -49,41 +75,77 @@ export function MagicLinkForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-semibold">Sign In / Sign Up</CardTitle>
-        <CardDescription className="text-sm">Enter your email below to receive a magic link.</CardDescription>
+        <CardTitle className="text-2xl font-semibold">
+          {stage === 'email' ? 'Sign In / Sign Up' : 'Enter the Code'}
+        </CardTitle>
+        {stage === 'email' ? (
+          <CardDescription className="text-sm">We'll send a 6-digit code to your inbox.</CardDescription>
+        ) : (
+          <CardDescription className="text-sm">Check your e-mail (<span className="font-medium">{email}</span>)</CardDescription>
+        )}
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="your@email.com"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-            />
-          </div>
+        {stage === 'email' ? (
+          <form onSubmit={sendCode} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                required
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+              />
+            </div>
 
-          {message && <p className="text-sm text-green-600">{message}</p>}
-          {errorMsg && <p className="text-sm text-red-600">Error: {errorMsg}</p>}
+            {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
 
-          <Button
-            type="submit"
-            disabled={loading}
-            className="w-full"
-          >
-            {loading ? (
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            ) : null}
-            {loading ? 'Sending...' : 'Send Magic Link'}
-          </Button>
-        </form>
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? 'Sending…' : 'Send Code'}
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={verifyCode} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="code">6-digit Code</Label>
+              <Input
+                id="code"
+                type="text"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                inputMode="numeric"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
+            {infoMsg && <p className="text-sm text-green-600">{infoMsg}</p>}
+            {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
+
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? 'Verifying…' : 'Verify & Continue'}
+            </Button>
+            <p className="text-xs text-center text-muted-foreground">
+              Didn't get it?{' '}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => {
+                  // resend code
+                  setStage('email');
+                  setCode('');
+                  setInfoMsg('');
+                }}
+              >
+                Resend
+              </button>
+            </p>
+          </form>
+        )}
       </CardContent>
     </Card>
   );
