@@ -7,7 +7,7 @@ import { Brain } from 'lucide-react';
 
 export default function Navbar() {
   return (
-    <nav className="flex items-center justify-between h-16 px-4 border-b sm:px-6 lg:px-8 bg-background border-border">
+    <nav className="fixed top-0 inset-x-0 z-20 flex items-center justify-between px-4 py-2 sm:px-6 lg:px-8 bg-background/80 backdrop-blur border-b border-border">
       <div className="flex items-center">
         {/* <Link href="/"> Optional: Make Grizz logo a link to home */}
         <span className="font-semibold text-lg text-foreground">Grizz</span>

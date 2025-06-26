@@ -199,7 +199,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           )}
         </div>
       ) : (
-        <div className="max-w-[70%] text-sm leading-relaxed break-words p-4">
+        <div className="w-full text-sm leading-relaxed break-words p-4">
           {/* Display file attachments */}
           {message.files && message.files.length > 0 && (
             <div className="mb-3">
