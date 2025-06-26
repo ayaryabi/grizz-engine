@@ -255,18 +255,8 @@ async def process_chat_job(
         logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
         # Capture error in Sentry with context
         sentry_sdk.capture_exception(e)
-        # Publish an error chunk to the client
-        error_message_for_client = f"[Error: Sorry, an unexpected error occurred while processing your reque st. Job ID: {job_id}]"
-        await publish_result_chunk(
-            redis_conn,
-            job_id,
-            error_message_for_client,
-            client_id,
-            is_final=True # Error is also a final state for this stream
-        )
-        # Optionally, save an error placeholder to DB or handle differently
-        # For now, we are not saving OpenAI errors to the message history here,
-        # only publishing to client.
+        # DO NOT publish error chunk here - let the retry logic handle it
+        # Only the final failure should send an error to the client
         return False
     finally:
         await db.close()
@@ -337,7 +327,25 @@ async def worker_loop():
                     # Wait before processing more messages (to prevent rapid retries)
                     await asyncio.sleep(RETRY_DELAY)
                 else:
-                    # Max retries exceeded, move to dead letter queue
+                    # Max retries exceeded - send error to client ONCE
+                    job_id = data.get('job_id', 'unknown')
+                    try:
+                        metadata_str = data.get("metadata", "{}")
+                        metadata = json.loads(metadata_str)
+                        client_id = metadata.get("client_id", "unknown-client")
+                        
+                        error_message_for_client = f"[Error: Sorry, we couldn't process your message after {MAX_RETRY_COUNT} attempts. Please try again.]"
+                        await publish_result_chunk(
+                            redis_conn,
+                            job_id,
+                            error_message_for_client,
+                            client_id,
+                            is_final=True
+                        )
+                    except Exception as publish_error:
+                        logger.error(f"Failed to send final error message for job {job_id}: {str(publish_error)}")
+                    
+                    # Move to dead letter queue
                     await move_to_dead_letter(
                         redis_conn,
                         message_id,

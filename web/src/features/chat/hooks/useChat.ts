@@ -230,9 +230,14 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     ws.onmessage = (event) => {
       console.log("WebSocket message received:", event.data.substring(0, 50) + "...");
       
-      // Ignore ping responses
-      if (event.data === JSON.stringify({ type: 'pong' })) {
-        return;
+      // Ignore ping/pong responses - check if it's a JSON message with type: pong
+      try {
+        const parsed = JSON.parse(event.data);
+        if (parsed.type === 'pong') {
+          return; // Don't process pong messages
+        }
+      } catch (e) {
+        // Not JSON, continue processing as regular message
       }
       
       // Append to current AI message or create a new one

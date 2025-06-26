@@ -109,6 +109,10 @@ async def websocket_chat_endpoint(
                 # Parse JSON if present, otherwise treat as plain text
                 try:
                     parsed_data = json.loads(message_data)
+                    # Handle ping messages FIRST, before any processing
+                    if parsed_data.get('type') == 'ping':
+                        await websocket.send_text(json.dumps({"type": "pong"}))
+                        continue  # Skip all processing for ping messages
                     user_message = parsed_data.get('text', '')
                     file_urls = parsed_data.get('file_urls', [])
                 except (json.JSONDecodeError, TypeError):

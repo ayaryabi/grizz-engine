@@ -1,77 +1,70 @@
-## 🗓️ Today – Ship *Persistent Chat History* (Supabase + React Query)
+## 🗓️ Today — Refactor `ChatMessageInput` into a Modular Input System
 
-### 1  Goal
-When a user reloads the chat page they immediately see the last **20** messages of today's conversation, can scroll up to load older messages, and automatically roll into yesterday's conversation when today is exhausted.  Optimistic-UI & the existing WebSocket streaming stay exactly as they are.
+### 🚩 Why
+The current `ChatMessageInput.tsx` (~300 LOC) mixes text-input logic, drag-and-drop, file upload state, previews, and send-message plumbing in one component.  Splitting these concerns will:
+• simplify maintenance & tests
+• let us reuse the file-upload zone elsewhere (profile pics, bytes, etc.)
+• unlock easier UI tweaks (e.g. mobile-only input)
 
----
-### 2  Step-by-step implementation (plain list)
+### ✅ Success Criteria
+1. Message send UX identical (Enter to send, Shift+Enter newline, optimistic UI).
+2. Drag-and-drop + file-button still work and show previews.
+3. No regression in WebSocket send logic.
+4. Unit tests cover new hooks; Cypress happy-path passes.
 
-1. **Ensure Row-Level Security** (Supabase Dashboard)
-   • `conversations` and `messages` tables: add `user_id = auth.uid()` policy for `SELECT`.
-
-2. **Create history hook** – `web/src/lib/hooks/useMessages.ts`
-   • `useInfiniteQuery` + Supabase. First page: `LIMIT 20` newest rows.
-   • Subsequent pages: `before=<oldest_created_at>`, again `LIMIT 20`.
-   • Return `{ rows, nextCursor }`.
-
-3. **Wire hook into chat logic** – edit `web/src/lib/hooks/useChat.ts`
-   a. Call `useMessages(conversationId)` once `/api/chat/today` resolves.
-   b. On success set `messages` state with the flattened pages.
-   c. After every optimistic send / streamed chunk, also call
-      `queryClient.setQueryData(['messages', conversationId], updater)` so cache stays current.
-
-4. **Add scroll-up fetch** – edit `web/src/features/chat/components/ChatMessageList.tsx`
-   • `onScroll` handler: when `scrollTop === 0` and `hasNextPage`, call `fetchNextPage()`.
-   • Auto-scroll to bottom for new messages remains as is.
-
-5. **Plumb paging props** – edit `ChatView.tsx`
-   • Pass `{ fetchNextPage, hasNextPage, isFetchingNextPage }` from `useChat` down to the list.
-   • Optional: render a "Loading older…" spinner.
-
-6. **(Nice-to-have) Previous day rollover** – extend `useMessages.ts`
-   • When `hasNextPage === false`, query Supabase for the previous `conversation_id` (`conv_day < today` order desc limit 1).
-   • Update `conversationId` state to trigger the same history fetching for that day.
-
----
-### 3  Key code snippets
-
-```ts
-// useMessages.ts (NEW)
-export function useMessages(conversationId?: string) {
-  return useInfiniteQuery({
-    queryKey: ['messages', conversationId],
-    enabled: !!conversationId,
-    initialPageParam: undefined,            // first page
-    queryFn: ({ pageParam }) => fetchPage(conversationId!, pageParam),
-    getNextPageParam: last => last.nextCursor, // undefined = no more rows
-  });
-}
-
-async function fetchPage(id: string, before?: string) {
-  let q = supabase
-    .from('messages')
-    .select('id, role:role, content, created_at, message_metadata')
-    .eq('conversation_id', id)
-    .order('created_at', { ascending: false })
-    .limit(20);
-  if (before) q = q.lt('created_at', before);
-  const { data, error } = await q;
-  if (error) throw error;
-  const rows = (data ?? []).reverse(); // oldest → newest
-  return {
-    rows,
-    nextCursor: rows.length === 20 ? rows[0].created_at : undefined,
-  };
-}
+### 📂 Target File/Folder Layout (9 files, ~250 LOC total)
+```
+src/features/chat/components/message-input/
+├─ index.tsx                 # Orchestrator: assembles parts & exposes <ChatMessageInput />
+├─ context/
+│   └─ FileUploadContext.tsx # React context + provider with file state & helpers
+├─ hooks/
+│   ├─ useFileUpload.ts      # Convenience hook for the context
+│   ├─ useAutoHeight.ts      # Shared textarea-auto-grow logic
+│   └─ useDragAndDrop.ts     # Handles drag state, returns { isDragging, … }
+└─ components/
+    ├─ MessageInputBase.tsx  # Textarea only; props: value, onChange, onSend, disabled
+    ├─ FileUploadZone.tsx    # Wrapper handling drag events; shows <DragOverlay />
+    ├─ FilePreviewList.tsx   # Flex grid of <FilePreview />
+    ├─ FilePreview.tsx       # Single preview w/ remove-button
+    └─ DragOverlay.tsx       # Dashed border overlay shown while dragging
 ```
 
----
-### 4  Testing checklist
-1. Refresh → last 20 messages appear instantly.
-2. Send message → optimistic display, stays after refresh.
-3. Scroll to top → older 20 messages prepend. Repeat.
-4. After today's messages exhausted, list continues into yesterday.
-5. Login with second user → cannot read first user's rows (RLS verifies).
+### 🛠️ Implementation Steps
+1. **Scaffold directories** (`message-input/`, `components/`, `hooks/`, `context/`).
+2. **Create `FileUploadContext`**
+   • `files: FilePreview[]`, `isDragging: boolean`
+   • helpers: `addFiles(FileList)`, `removeFile(id)`, `clear()`
+3. **Hook: `useFileUpload`** → just `return useContext(FileUploadContext)`.
+4. **Hook: `useAutoHeight`**
+   • takes `value` string, resizes a forwarded `textareaRef` between 24-120 px.
+5. **Hook: `useDragAndDrop`**
+   • centralises `dragenter / leave / over / drop` logic → emits `setIsDragging`, `addFiles`.
+6. **Component: `MessageInputBase`**
+   • wraps `<Textarea />`, handles Enter/Shift+Enter, calls `onSend`.
+7. **Component: `FileUploadZone`**
+   • uses `useDragAndDrop` + renders `{children}`; attaches hidden `<input type=file />` on click of 📎 icon.
+8. **Component: `FilePreview[List]`**
+   • shows image thumb or generic icon; 32×32 and filename; x-button to remove.
+9. **Component: `DragOverlay`**
+   • translucent primary/10 background + dashed border.
+10. **`index.tsx` Orchestrator**
+    • local state: `text`.
+    • pulls `{files, clear}` from context.
+    • `handleSend` → `onSendMessage(text, files)` (prop) then `clear()` & `setText("")`.
+    • layout: `FileUploadZone` → stack `MessageInputBase` + `FilePreviewList`.
+11. **Replace Old Import**
+    • Update `ChatView.tsx` (or wherever) to import the new path.
+12. **Delete legacy file** `ChatMessageInput.tsx` once tests pass.
+13. **Unit tests**
+    • `useFileUpload` adds/removes files, cleans ObjectURLs.
+    • `MessageInputBase` sends on Enter.
+14. **Cypress smoke**: send text, attach jpg, drag png → previews show, message arrives.
+
+### 🧹 Post-refactor Cleanup
+• Run `eslint --fix` & `pnpm test`.
+• Update storybook snapshot (if any).
+• Docs: add short snippet in `README.md` about reusing `FileUploadZone`.
 
 ---
-Owner: **Frontend team** · Est. effort ⬩ 3–4 hrs for base paging, +2 hrs polish.
+_Assignee: Frontend agent • Est. effort: 2-3 hrs (coding) + 30 min testing._
