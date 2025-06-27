@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useAuth } from "@/features/auth/AuthContext"; // Adjust path if needed
+import { useSubscription } from "@/features/subscription/useSubscription";
 import { useTheme } from "next-themes"; // Import useTheme
 import {
   Avatar,
@@ -21,11 +22,22 @@ import {
   DropdownMenuPortal
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { LogOut, Sun, Moon, Laptop } from "lucide-react"; // Removed unused UserIcon
+import { LogOut, Sun, Moon, Laptop, CreditCard } from "lucide-react"; // Added CreditCard icon
 
 export function UserNav() {
   const { user, profile, signOut, loading } = useAuth();
   const { setTheme } = useTheme(); // Destructure setTheme
+  const { openPortal, loading: subscriptionLoading } = useSubscription();
+  
+  const handleOpenPortal = async () => {
+    try {
+      await openPortal();
+    } catch (error) {
+      console.error('Failed to open portal:', error);
+      // You could add a toast notification here
+      alert(`Failed to open subscription portal: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   if (loading) {
     // You might want a skeleton loader here instead of null
@@ -101,16 +113,16 @@ export function UserNav() {
           </DropdownMenuPortal>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
-        {/* Potential future items:
-        <DropdownMenuItem className="cursor-pointer">
-          <UserIcon className="mr-2 h-4 w-4" />
-          <span>Profile</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem className="cursor-pointer">
-          Settings
+        {/* Subscription Management */}
+        <DropdownMenuItem 
+          onClick={handleOpenPortal} 
+          disabled={subscriptionLoading}
+          className="cursor-pointer"
+        >
+          <CreditCard className="mr-2 h-4 w-4" />
+          <span>Subscription</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        */}
         <DropdownMenuItem onClick={signOut} className="cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />
           <span>Sign out</span>

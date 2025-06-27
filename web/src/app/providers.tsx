@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/features/auth/AuthContext";
+import { SubscriptionProvider } from "@/features/subscription/SubscriptionContext";
 import { ReactNode, useState } from "react";
 
 interface ProvidersProps {
@@ -32,7 +33,9 @@ export default function Providers({ children }: ProvidersProps) {
         disableTransitionOnChange
       >
         <AuthProvider>
-          {children}
+          <SubscriptionProvider>
+            {children}
+          </SubscriptionProvider>
         </AuthProvider>
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />
