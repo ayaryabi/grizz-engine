@@ -40,25 +40,42 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get customer ID from Stripe - look for all customers
-    const customers = await stripe.customers.list({
-      email: user.email,
-      limit: 100, // Increased to catch all duplicates
-    });
+    // Get customer ID from our database first (fast!)
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('stripe_customer_id')
+      .eq('user_id', user.id)
+      .single();
 
-    if (customers.data.length === 0) {
-      return NextResponse.json(
-        { error: 'No Stripe customer found' },
-        { status: 404 }
-      );
+    let stripeCustomerId: string;
+
+    if (subscription?.stripe_customer_id) {
+      // Use cached customer ID (fast path)
+      stripeCustomerId = subscription.stripe_customer_id;
+    } else {
+      // Fallback: Look up customer in Stripe (slow, but only happens once)
+      const customers = await stripe.customers.list({
+        email: user.email,
+        limit: 10,
+      });
+
+      if (customers.data.length === 0) {
+        // Create a new customer if none exists (edge case)
+        const newCustomer = await stripe.customers.create({
+          email: user.email,
+          metadata: {
+            userId: user.id,
+          }
+        });
+        stripeCustomerId = newCustomer.id;
+      } else {
+        stripeCustomerId = customers.data[0].id;
+      }
     }
-
-    // If multiple customers found, use the oldest one
-    const oldestCustomer = customers.data.sort((a, b) => a.created - b.created)[0];
 
     // Create a portal session
     const session = await stripe.billingPortal.sessions.create({
-      customer: oldestCustomer.id,
+      customer: stripeCustomerId,
       return_url: `${req.headers.get('origin')}`,
     });
 

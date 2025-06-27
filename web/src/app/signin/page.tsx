@@ -41,10 +41,10 @@ export default function SigninPage() {
       if (error) throw error;
 
       // Redirect to verification page
+      // Important: Don't reset loading state before redirect
       router.push(`/verify?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Unable to send verification email');
-    } finally {
       setLoading(false);
     }
   };
