@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/supabase';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,39 +12,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export function MagicLinkForm() {
-  const [stage, setStage] = useState<'email' | 'code'>('email');
+  const [stage, setStage] = useState<'email' | 'code'>('code');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [infoMsg, setInfoMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const sendCode = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMsg('');
-
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true, // sign-up if new
-        },
-      });
-      if (error) throw error;
-
-      setStage('code');
-      setInfoMsg('We just emailed you a 6-digit code. Enter it below.');
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Unable to send code');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    // Get email from URL params
+    const emailParam = searchParams.get('email');
+    if (emailParam) {
+      setEmail(emailParam);
     }
-  };
+  }, [searchParams]);
 
   const verifyCode = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -55,16 +41,33 @@ export function MagicLinkForm() {
       const { error } = await supabase.auth.verifyOtp({
         email,
         token: code,
-        type: 'email', // verify sign-in / sign-up email OTP
+        type: 'email',
       });
       if (error) throw error;
 
-      // Supabase returned a session; AuthContext listener will redirect.
-      setInfoMsg('Logged in! Redirecting…');
-      // Small delay to show the message
-      setTimeout(() => {
+      // Get stored first name and check for plan parameter
+      const firstName = localStorage.getItem('signup_first_name');
+      const searchParams = new URLSearchParams(window.location.search);
+      const plan = searchParams.get('plan');
+      
+      if (firstName) {
+        // This was a signup
+        localStorage.removeItem('signup_first_name');
+        
+        if (plan === 'pro') {
+          // User came from pricing - redirect to checkout
+          setInfoMsg('Account created! Setting up your plan...');
+          router.replace('/checkout');
+        } else {
+          // Normal signup - redirect to homepage
+          setInfoMsg('Account created! Redirecting...');
+          router.replace('/');
+        }
+      } else {
+        // This was a signin - redirect to homepage
+        setInfoMsg('Welcome back! Redirecting...');
         router.replace('/');
-      }, 500);
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Invalid code');
     } finally {
@@ -75,77 +78,49 @@ export function MagicLinkForm() {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl font-semibold">
-          {stage === 'email' ? 'Sign In / Sign Up' : 'Enter the Code'}
-        </CardTitle>
-        {stage === 'email' ? (
-          <CardDescription className="text-sm">We&apos;ll send a 6-digit code to your inbox.</CardDescription>
-        ) : (
-          <CardDescription className="text-sm">Check your e-mail (<span className="font-medium">{email}</span>)</CardDescription>
-        )}
+        <CardTitle className="text-2xl font-semibold">Enter the Code</CardTitle>
+        <CardDescription className="text-sm">
+          Check your e-mail (<span className="font-medium">{email}</span>)
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        {stage === 'email' ? (
-          <form onSubmit={sendCode} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                required
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
-              />
-            </div>
+        <form onSubmit={verifyCode} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="code">6-digit Code</Label>
+            <Input
+              id="code"
+              type="text"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              inputMode="numeric"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              disabled={loading}
+            />
+          </div>
 
-            {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
+          {infoMsg && <p className="text-sm text-green-600">{infoMsg}</p>}
+          {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
 
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? 'Sending…' : 'Send Code'}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={verifyCode} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="code">6-digit Code</Label>
-              <Input
-                id="code"
-                type="text"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                required
-                inputMode="numeric"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-
-            {infoMsg && <p className="text-sm text-green-600">{infoMsg}</p>}
-            {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
-
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? 'Verifying…' : 'Verify & Continue'}
-            </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Didn&apos;t get it?{' '}
-              <button
-                type="button"
-                className="underline"
-                onClick={() => {
-                  // resend code
-                  setStage('email');
-                  setCode('');
-                  setInfoMsg('');
-                }}
-              >
-                Resend
-              </button>
-            </p>
-          </form>
-        )}
+          <Button type="submit" disabled={loading} className="w-full">
+            {loading ? 'Verifying…' : 'Verify & Continue'}
+          </Button>
+          <p className="text-xs text-center text-muted-foreground">
+            Didn&apos;t get it?{' '}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => {
+                // Go back to appropriate page
+                const firstName = localStorage.getItem('signup_first_name');
+                router.push(firstName ? '/signup' : '/signin');
+              }}
+            >
+              Try Again
+            </button>
+          </p>
+        </form>
       </CardContent>
     </Card>
   );
