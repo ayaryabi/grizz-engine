@@ -31,13 +31,20 @@ export default function CheckoutPage() {
           throw new Error('Failed to create checkout session');
         }
 
-        const { sessionId } = await response.json();
+        const data = await response.json();
         
-        // Redirect to Stripe Checkout
+        // Check response type
+        if (data.type === 'portal') {
+          // Redirect to Stripe Customer Portal
+          window.location.href = data.url;
+          return;
+        }
+        
+        // Otherwise, redirect to Stripe Checkout
         const stripe = await getStripe();
         if (!stripe) throw new Error('Failed to load Stripe');
         
-        const { error } = await stripe.redirectToCheckout({ sessionId });
+        const { error } = await stripe.redirectToCheckout({ sessionId: data.sessionId });
         if (error) throw error;
 
       } catch (err) {
@@ -76,7 +83,7 @@ export default function CheckoutPage() {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="text-center">
         <h1 className="text-2xl font-bold mb-4">Setting Up Your Trial</h1>
-        <p className="text-gray-600">Please wait while we redirect you to checkout...</p>
+        <p className="text-gray-600">Please wait while we redirect you...</p>
       </div>
     </div>
   );
