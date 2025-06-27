@@ -40,10 +40,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get customer ID from Stripe
+    // Get customer ID from Stripe - look for all customers
     const customers = await stripe.customers.list({
       email: user.email,
-      limit: 1,
+      limit: 100, // Increased to catch all duplicates
     });
 
     if (customers.data.length === 0) {
@@ -53,9 +53,12 @@ export async function POST(req: Request) {
       );
     }
 
+    // If multiple customers found, use the oldest one
+    const oldestCustomer = customers.data.sort((a, b) => a.created - b.created)[0];
+
     // Create a portal session
     const session = await stripe.billingPortal.sessions.create({
-      customer: customers.data[0].id,
+      customer: oldestCustomer.id,
       return_url: `${req.headers.get('origin')}/account`,
     });
 

@@ -47,61 +47,52 @@ export async function POST(req: Request) {
       limit: 100, // Increased limit to catch all possible duplicates
     });
 
-    // If multiple customers found, we'll use the oldest one
     let stripeCustomerId: string;
-    let existingCustomer: Stripe.Customer | null = null;
 
     if (allCustomers.data.length > 0) {
-      // Sort by creation date ascending (oldest first)
-      const sortedCustomers = allCustomers.data.sort((a, b) => a.created - b.created);
-      existingCustomer = sortedCustomers[0];
-      stripeCustomerId = existingCustomer.id;
+      // Sort by creation date ascending (oldest first) and use the first one
+      const oldestCustomer = allCustomers.data.sort((a, b) => a.created - b.created)[0];
+      stripeCustomerId = oldestCustomer.id;
 
-      // Check ALL subscription statuses that could indicate an active subscription
-      const allSubscriptions = await stripe.subscriptions.list({
-        customer: stripeCustomerId,
-        status: 'all', // Get all subscriptions to check their status
-        limit: 100,
-      });
-
-      // Check for any subscription that's not canceled or incomplete_expired
-      const activeOrPendingSubscription = allSubscriptions.data.find(sub => 
-        ['active', 'trialing', 'past_due', 'unpaid', 'paused', 'incomplete'].includes(sub.status)
-      );
-
-      if (activeOrPendingSubscription) {
-        // Create portal session for any existing subscription
-        const portalSession = await stripe.billingPortal.sessions.create({
-          customer: stripeCustomerId,
-          return_url: `${req.headers.get('origin')}/account`,
-        });
-
-        return NextResponse.json({ 
-          type: 'portal',
-          url: portalSession.url 
-        });
+      // If there are duplicates, let's clean them up
+      if (allCustomers.data.length > 1) {
+        console.log(`Found ${allCustomers.data.length} duplicate customers for ${user.email}, cleaning up...`);
+        // Delete all but the oldest customer
+        for (const customer of allCustomers.data.slice(1)) {
+          try {
+            await stripe.customers.del(customer.id);
+            console.log(`Deleted duplicate customer: ${customer.id}`);
+          } catch (err) {
+            console.error(`Failed to delete duplicate customer ${customer.id}:`, err);
+          }
+        }
       }
-
-      // If we get here, the customer exists but has no active subscriptions
     } else {
-      // Create new customer
+      // Create new customer with idempotency key to prevent duplicates
       const newCustomer = await stripe.customers.create({
         email: user.email,
         metadata: {
           userId: user.id,
-        },
+        }
+      }, {
+        idempotencyKey: `customer_${user.id}_${user.email}` // This prevents duplicate customer creation
       });
       stripeCustomerId = newCustomer.id;
     }
 
-    // Double-check for any subscriptions one last time before creating checkout
-    // This helps prevent race conditions
-    const finalCheck = await stripe.subscriptions.list({
+    // Check for any active subscriptions
+    const subscriptions = await stripe.subscriptions.list({
       customer: stripeCustomerId,
-      limit: 1,
+      status: 'all',
+      limit: 100,
     });
 
-    if (finalCheck.data.length > 0) {
+    // If there's any active subscription, redirect to portal
+    const activeSubscription = subscriptions.data.find(sub => 
+      ['active', 'trialing', 'past_due', 'unpaid', 'paused', 'incomplete'].includes(sub.status)
+    );
+
+    if (activeSubscription) {
       const portalSession = await stripe.billingPortal.sessions.create({
         customer: stripeCustomerId,
         return_url: `${req.headers.get('origin')}/account`,
@@ -132,9 +123,12 @@ export async function POST(req: Request) {
       },
       success_url: `${req.headers.get('origin')}/?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.headers.get('origin')}/pricing`,
+      client_reference_id: user.id, // Add this to ensure we have user ID in webhooks
       metadata: {
         userId: user.id,
       },
+    }, {
+      idempotencyKey: `checkout_${user.id}_${Date.now()}` // Prevent duplicate checkouts
     });
 
     return NextResponse.json({ 
