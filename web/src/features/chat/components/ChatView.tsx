@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useRef, useLayoutEffect } from 'react';
+import React, { useRef, useLayoutEffect, useState } from 'react';
 import ChatMessageInput from './ChatMessageInput';
 import ChatMessageList from './ChatMessageList';
 import { useChat } from '@/features/chat/hooks/useChat';
+import { useSubscription } from '@/features/subscription/useSubscription';
+import { SubscriptionOverlay } from '@/features/subscription/SubscriptionOverlay';
 
 // Later, we'll import MessageList and ChatInput here
 // import MessageList from './MessageList';
@@ -16,6 +18,9 @@ interface ChatViewProps {
 export default function ChatView({ conversationId }: ChatViewProps) {
   // If conversationId is provided, use it, otherwise let useChat use its default "test"
   const { messages, isConnected, sendMessage, loading, isReconnecting, fetchNextPage, hasNextPage, isFetchingNextPage } = useChat(conversationId ? { conversationId } : {});
+  const { isActive, openPortal } = useSubscription();
+  const [showSubscriptionOverlay, setShowSubscriptionOverlay] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<{ text: string, files?: any[] }>();
   
   // Debounce connection status to prevent flashing
   const [showDisconnected, setShowDisconnected] = React.useState(false);
@@ -63,6 +68,31 @@ export default function ChatView({ conversationId }: ChatViewProps) {
     }
   }, [isConnected, loading, isReconnecting]);
 
+  // Handle message sending with subscription check
+  const handleSendMessage = async (text: string, files?: any[]) => {
+    // Only check subscription when actually trying to send a message
+    if (text.trim() || (files && files.length > 0)) {
+      if (!isActive) {
+        setPendingMessage({ text, files });
+        setShowSubscriptionOverlay(true);
+        return;
+      }
+      await sendMessage(text, files);
+    }
+  };
+
+  // Handle subscription update
+  const handleUpgrade = async () => {
+    await openPortal();
+    setShowSubscriptionOverlay(false);
+  };
+
+  // Handle overlay close
+  const handleOverlayClose = () => {
+    setShowSubscriptionOverlay(false);
+    setPendingMessage(undefined);
+  };
+
   return (
     // Main container for the chat interface: full width to push scrollbar to edge
     <div className="flex flex-col h-full w-full">
@@ -86,9 +116,17 @@ export default function ChatView({ conversationId }: ChatViewProps) {
       {/* Input area */}
       <div className="w-full bg-background">
         <div className="max-w-3xl mx-auto">
-          <ChatMessageInput onSendMessage={sendMessage} disabled={!isConnected} />
+          <ChatMessageInput onSendMessage={handleSendMessage} disabled={!isConnected} />
         </div>
       </div>
+
+      {/* Subscription Overlay */}
+      {showSubscriptionOverlay && (
+        <SubscriptionOverlay
+          onUpgrade={handleUpgrade}
+          onClose={() => setShowSubscriptionOverlay(false)}
+        />
+      )}
     </div>
   );
 } 
