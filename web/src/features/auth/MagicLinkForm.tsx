@@ -58,14 +58,14 @@ export function MagicLinkForm() {
           setInfoMsg('Account created! Setting up your plan...');
           router.replace('/checkout');
         } else {
-          // Normal signup - redirect to homepage
+          // Normal signup - redirect to chat
           setInfoMsg('Account created! Redirecting...');
-          router.replace('/');
+          router.replace('/chat');
         }
       } else {
-        // This was a signin - redirect to homepage
+        // This was a signin - redirect to chat
         setInfoMsg('Welcome back! Redirecting...');
-        router.replace('/');
+        router.replace('/chat');
       }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Invalid code');

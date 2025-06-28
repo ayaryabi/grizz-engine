@@ -175,10 +175,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const protectedRoutes = ['/dashboard', '/chat', '/settings', '/document', '/bytes'];
     const isProtectedRoute = protectedRoutes.some(route => pathname?.startsWith(route));
     
-    // If we're on a protected route and no user is found, redirect to auth
+    // If we're on a protected route and no user is found, redirect to signin
     if (isProtectedRoute && !user) {
-      console.log('AuthContext: No user found on protected route, redirecting to /auth');
-      router.push('/auth');
+      console.log('AuthContext: No user found on protected route, redirecting to /signin');
+      router.push('/signin');
     }
 
     // Let middleware handle redirect from auth page when logged in

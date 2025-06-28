@@ -55,8 +55,8 @@ export async function middleware(request: NextRequest) {
 
   // Case: Auth route with session
   if (pathname === authRoute && session) {
-    console.log('Session found on auth page, redirecting to home')
-    return NextResponse.redirect(new URL('/', request.url))
+    console.log('Session found on auth page, redirecting to chat')
+    return NextResponse.redirect(new URL('/chat', request.url))
   }
 
   // All other cases: Return the response with refreshed cookies

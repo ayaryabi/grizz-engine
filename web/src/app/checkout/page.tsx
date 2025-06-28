@@ -68,7 +68,7 @@ export default function CheckoutPage() {
           <p className="text-gray-600 mb-4">{error}</p>
           <button
             className="text-blue-600 hover:underline"
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/chat')}
           >
             Return to Homepage
           </button>

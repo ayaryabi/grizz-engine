@@ -120,7 +120,7 @@ export async function POST(req: Request) {
           userId: user.id,
         },
       },
-      success_url: `${req.headers.get('origin')}/?session_id={CHECKOUT_SESSION_ID}`,
+              success_url: `${req.headers.get('origin')}/chat?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.headers.get('origin')}/pricing`,
       client_reference_id: user.id, // Add this to ensure we have user ID in webhooks
       metadata: {
