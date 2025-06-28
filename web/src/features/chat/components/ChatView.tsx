@@ -7,6 +7,16 @@ import { useChat } from '@/features/chat/hooks/useChat';
 import { useSubscription } from '@/features/subscription/useSubscription';
 import { SubscriptionOverlay } from '@/features/subscription/SubscriptionOverlay';
 
+// Type for file attachments
+interface FileAttachment {
+  id: string;
+  file?: File;
+  url?: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
 // Later, we'll import MessageList and ChatInput here
 // import MessageList from './MessageList';
 // import ChatInput from './ChatInput';
@@ -20,7 +30,7 @@ export default function ChatView({ conversationId }: ChatViewProps) {
   const { messages, isConnected, sendMessage, loading, isReconnecting, fetchNextPage, hasNextPage, isFetchingNextPage } = useChat(conversationId ? { conversationId } : {});
   const { isActive, openPortal } = useSubscription();
   const [showSubscriptionOverlay, setShowSubscriptionOverlay] = useState(false);
-  const [pendingMessage, setPendingMessage] = useState<{ text: string, files?: any[] }>();
+  const [, setPendingMessage] = useState<{ text: string, files?: FileAttachment[] }>();
   
   // Debounce connection status to prevent flashing
   const [showDisconnected, setShowDisconnected] = React.useState(false);
@@ -69,7 +79,7 @@ export default function ChatView({ conversationId }: ChatViewProps) {
   }, [isConnected, loading, isReconnecting]);
 
   // Handle message sending with subscription check
-  const handleSendMessage = async (text: string, files?: any[]) => {
+  const handleSendMessage = async (text: string, files?: FileAttachment[]) => {
     // Only check subscription when actually trying to send a message
     if (text.trim() || (files && files.length > 0)) {
       if (!isActive) {
@@ -87,11 +97,11 @@ export default function ChatView({ conversationId }: ChatViewProps) {
     setShowSubscriptionOverlay(false);
   };
 
-  // Handle overlay close
-  const handleOverlayClose = () => {
-    setShowSubscriptionOverlay(false);
-    setPendingMessage(undefined);
-  };
+  // Handle overlay close - used in SubscriptionOverlay
+  // const handleOverlayClose = () => {
+  //   setShowSubscriptionOverlay(false);
+  //   setPendingMessage(undefined);
+  // };
 
   return (
     // Main container for the chat interface: full width to push scrollbar to edge

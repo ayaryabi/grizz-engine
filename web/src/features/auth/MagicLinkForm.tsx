@@ -15,7 +15,6 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 
 export function MagicLinkForm() {
-  const [stage, setStage] = useState<'email' | 'code'>('code');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);

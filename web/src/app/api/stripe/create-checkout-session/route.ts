@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStripeServer, STRIPE_PRICE_ID } from '@/lib/stripe/config';
 import { createClient } from '@supabase/supabase-js';
-import type { Stripe } from 'stripe';
 
 export async function POST(req: Request) {
   try {

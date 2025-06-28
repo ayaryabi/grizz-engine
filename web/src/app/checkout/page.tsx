@@ -6,7 +6,6 @@ import { getStripe } from '@/lib/stripe/config';
 import { useAuth } from '@/features/auth/AuthContext';
 
 export default function CheckoutPage() {
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { user, session } = useAuth();
@@ -50,7 +49,6 @@ export default function CheckoutPage() {
       } catch (err) {
         console.error('Checkout error:', err);
         setError(err instanceof Error ? err.message : 'Something went wrong');
-        setIsLoading(false);
       }
     };
 

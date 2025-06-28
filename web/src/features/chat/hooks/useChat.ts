@@ -129,7 +129,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     }
 
     fetchTodayConversation();
-  }, [session?.access_token, propConversationId]);
+  }, [session, propConversationId]);
 
   // Ping function to keep connection alive
   const sendPing = () => {
@@ -236,7 +236,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         if (parsed.type === 'pong') {
           return; // Don't process pong messages
         }
-      } catch (e) {
+      } catch {
         // Not JSON, continue processing as regular message
       }
       
@@ -271,7 +271,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
   }, [conversationId, session?.access_token]);
 
   // Reconnection logic with exponential backoff
-  const attemptReconnection = () => {
+  const attemptReconnection = useCallback(() => {
     if (!shouldReconnectRef.current || reconnectAttempts >= 10) {
       console.log('Max reconnection attempts reached or reconnection disabled');
       setIsReconnecting(false);
@@ -290,10 +290,10 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     reconnectTimeoutRef.current = setTimeout(() => {
       connectWebSocket();
     }, delay);
-  };
+  }, [reconnectAttempts, connectWebSocket]);
 
   // Start ping interval
-  const startPingInterval = () => {
+  const startPingInterval = useCallback(() => {
     stopPingInterval(); // Clear any existing interval
     
     // Send ping every 4 minutes (240000ms)
@@ -304,16 +304,16 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     }, 4 * 60 * 1000);
     
     console.log('Heartbeat interval started (4 minutes)');
-  };
+  }, []);
 
   // Stop ping interval
-  const stopPingInterval = () => {
+  const stopPingInterval = useCallback(() => {
     if (pingIntervalRef.current) {
       clearInterval(pingIntervalRef.current);
       pingIntervalRef.current = null;
       console.log('Heartbeat interval stopped');
     }
-  };
+  }, []);
 
   // Page visibility detection for tab switching
   useEffect(() => {
@@ -353,7 +353,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [conversationId, session?.access_token, isConnected]);
+  }, [conversationId, session?.access_token, isConnected, connectWebSocket, startPingInterval]);
 
   // Main WebSocket connection effect
   useEffect(() => {
@@ -392,7 +392,7 @@ export function useChat({ conversationId: propConversationId }: UseChatProps = {
         wsRef.current.close();
       }
     };
-  }, [conversationId, session?.access_token, connectWebSocket]);
+  }, [conversationId, session, connectWebSocket, stopPingInterval]);
 
   const sendMessage = async (text: string, files?: FileAttachment[]) => {
     // Reset the current message ID so a new AI message will be created

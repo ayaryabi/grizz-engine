@@ -1,5 +1,3 @@
-import { headers } from 'next/headers';
-import { NextResponse } from 'next/server';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import Stripe from 'stripe';
@@ -18,13 +16,7 @@ const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 // Export config
 export const dynamic = 'force-dynamic';
 
-// Define Stripe subscription type
-type StripeSubscription = {
-  id: string;
-  status: string;
-  current_period_start: number;
-  current_period_end: number;
-};
+// Remove unused type definition
 
 // Handle OPTIONS request for CORS
 export async function OPTIONS() {
@@ -107,14 +99,13 @@ export async function POST(req: Request) {
         }
 
         // Get subscription details
-        const subscriptionResponse = await stripe.subscriptions.retrieve(session.subscription as string);
-        const subscriptionData = subscriptionResponse as any;
+        const subscriptionData = await stripe.subscriptions.retrieve(session.subscription as string);
         
         console.log('Retrieved subscription:', {
           id: subscriptionData.id,
           status: subscriptionData.status,
-          current_period_start: subscriptionData.current_period_start,
-          current_period_end: subscriptionData.current_period_end
+          current_period_start: 'timestamp_available',
+          current_period_end: 'timestamp_available'
         });
 
         // Create dates with proper error handling
@@ -122,8 +113,9 @@ export async function POST(req: Request) {
         
         try {
           // Check if the timestamps exist and are valid numbers
-          const startTimestamp = subscriptionData.current_period_start;
-          const endTimestamp = subscriptionData.current_period_end;
+          const subscription = subscriptionData as unknown as { current_period_start: number; current_period_end: number };
+          const startTimestamp = subscription.current_period_start;
+          const endTimestamp = subscription.current_period_end;
           
           if (!startTimestamp || !endTimestamp || startTimestamp === 0 || endTimestamp === 0) {
             // If timestamps are missing, use current time and add 30 days
@@ -235,8 +227,9 @@ export async function POST(req: Request) {
         console.log(`Subscription status changed from ${previousAttributes.status} to ${subscription.status}`);
         
         // Get subscription details for period updates (in case plan changed too)
-        const startDate = new Date((subscription as any).current_period_start * 1000);
-        const endDate = new Date((subscription as any).current_period_end * 1000);
+        const subscriptionWithPeriod = subscription as unknown as { current_period_start: number; current_period_end: number };
+        const startDate = new Date(subscriptionWithPeriod.current_period_start * 1000);
+        const endDate = new Date(subscriptionWithPeriod.current_period_end * 1000);
 
         // Update subscription with new status and period info
         const { error } = await supabase
@@ -275,7 +268,8 @@ export async function POST(req: Request) {
 
       case 'invoice.paid': {
         const invoice = event.data.object as Stripe.Invoice;
-        const subscriptionId = (invoice as any).subscription;
+        const invoiceWithSub = invoice as unknown as { subscription: string };
+        const subscriptionId = invoiceWithSub.subscription;
         
         if (!subscriptionId) {
           return new Response(JSON.stringify({ received: true }), {
@@ -290,8 +284,9 @@ export async function POST(req: Request) {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         
         // Update subscription period
-        const startDate = new Date((subscription as any).current_period_start * 1000);
-        const endDate = new Date((subscription as any).current_period_end * 1000);
+        const subWithPeriod = subscription as unknown as { current_period_start: number; current_period_end: number };
+        const startDate = new Date(subWithPeriod.current_period_start * 1000);
+        const endDate = new Date(subWithPeriod.current_period_end * 1000);
 
         const { error } = await supabase
           .from('subscriptions')
@@ -310,7 +305,8 @@ export async function POST(req: Request) {
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        const subscriptionId = (invoice as any).subscription;
+        const invoiceWithSub = invoice as unknown as { subscription: string };
+        const subscriptionId = invoiceWithSub.subscription;
         
         if (!subscriptionId) {
           return new Response(JSON.stringify({ received: true }), {
