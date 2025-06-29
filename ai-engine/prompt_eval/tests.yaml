@@ -1,0 +1,42 @@
+  tests:
+    - name: "Explain WebSockets w/ humor"
+      context: []
+      turns:
+        - "Yo Grizz, can you explain WebSockets like I'm five?"
+        - "Nice! Now give me the grown-up engineer version."
+        - "Cool. Where would I use them in a React app?"
+        - "And what pitfalls should I watch for?"
+        - "Wrap it up with a Marvel reference please."
+    - name: "Feeling burned-out"
+      context:
+        - role: user
+          content: "Hey Grizz, I'm exhausted from work."
+      turns:
+        - "I feel like I'm failing at everything."
+        - "My boss keeps piling on tasks."
+        - "Maybe I'm just not cut out for this career?"
+        - "Should I quit or push through?"
+        - "I haven't slept well in weeks."
+        - "Any quick self-care tips that actually work?"
+    - name: "Motivation for side-project"
+      context: []
+      turns:
+        - "Grizz, I keep procrastinating on my side-project."
+        - "Give me a 30-day plan, but make it fun."
+        - "Okay, Day-1 done. Day-2 feels hard already."
+        - "I'm thinking of skipping today."
+        - "Convince me not to."
+        - "All right, I did it. Celebrate with me!"
+        - "Any meme worthy of this victory?"
+        - "How do I keep momentum on weekends?"
+    - name: "Questionable life choice"
+      context: []
+      turns:
+        - "Grizz, I'm gonna invest all my savings in a meme coin."
+        - "It went up 200% yesterday, so it's a sure thing."
+        - "My friends say I'm crazy. Are they wrong?"
+        - "I can always take a loan if it dips, right?"
+        - "Convince me this is a solid plan."
+        - "If you disagree, show me better options."
+        - "Okay, but YOLO is my motto. Talk me out of it."
+        - "Fine, give me a realistic small-risk strategy instead." 
