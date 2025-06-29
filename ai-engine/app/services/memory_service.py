@@ -6,7 +6,7 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-async def fetch_recent_messages(conversation_id: str, db: AsyncSession, limit: int = 10):
+async def fetch_recent_messages(conversation_id: str, db: AsyncSession, limit: int = 50):
     """
     Fetch the last N messages for a conversation, ordered chronologically.
     Uses SQLAlchemy 2.0 style select for async support.
